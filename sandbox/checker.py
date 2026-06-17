@@ -55,6 +55,26 @@ _ACCESSORY_HINTS = ("corrid", "disimpegno", "bagno", "wc", "toilet", "bath", "cl
 
 
 @dataclass
+class Thresholds:
+    """Checker contract — defaults match DM 1975; overridden by parser.py output via --rules."""
+
+    min_height_habitable_m: float = MIN_HEIGHT_HABITABLE_M
+    min_height_accessory_m: float = MIN_HEIGHT_ACCESSORY_M
+    min_height_salva_casa_m: float = MIN_HEIGHT_SALVA_CASA_M
+    aero_illuminating_ratio: float = AEROILLUM_RATIO
+
+    @classmethod
+    def from_rules_json(cls, path: str) -> "Thresholds":
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        t = data.get("thresholds", data) if isinstance(data, dict) else {}
+        keys = ("min_height_habitable_m", "min_height_accessory_m",
+                "min_height_salva_casa_m", "aero_illuminating_ratio")
+        kw = {k: float(t[k]) for k in keys if isinstance(t, dict) and t.get(k) is not None}
+        return cls(**kw)
+
+
+@dataclass
 class SpaceFinding:
     global_id: str
     name: str
@@ -138,15 +158,15 @@ def windows_serving(space, scale: float) -> float:
     return total
 
 
-def check_space(space, scale: float, salva_casa: bool) -> SpaceFinding:
+def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> SpaceFinding:
     occ = classify(space)
     h = space_height(space, scale)
     area = space_floor_area(space, scale)
     win = windows_serving(space, scale)
 
-    required = MIN_HEIGHT_ACCESSORY_M if occ == "accessory" else MIN_HEIGHT_HABITABLE_M
+    required = thr.min_height_accessory_m if occ == "accessory" else thr.min_height_habitable_m
     if salva_casa and occ != "accessory":
-        required = MIN_HEIGHT_SALVA_CASA_M
+        required = thr.min_height_salva_casa_m
 
     finding = SpaceFinding(
         global_id=space.GlobalId,
@@ -171,7 +191,7 @@ def check_space(space, scale: float, salva_casa: bool) -> SpaceFinding:
     if occ == "accessory":
         finding.notes.append("aero ratio N/A for accessory room (separate ventilation rules)")
     elif area:
-        finding.aero_ok = (win / area) + 1e-9 >= AEROILLUM_RATIO
+        finding.aero_ok = (win / area) + 1e-9 >= thr.aero_illuminating_ratio
         if win == 0.0:
             finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
     else:
@@ -180,10 +200,11 @@ def check_space(space, scale: float, salva_casa: bool) -> SpaceFinding:
     return finding
 
 
-def run(path: str, salva_casa: bool = False) -> dict:
+def run(path: str, salva_casa: bool = False, thr: Optional["Thresholds"] = None) -> dict:
+    thr = thr or Thresholds()
     model = ifcopenshell.open(path)
     scale = uu.calculate_unit_scale(model)  # project length unit -> metres
-    findings = [check_space(s, scale, salva_casa) for s in model.by_type("IfcSpace")]
+    findings = [check_space(s, scale, salva_casa, thr) for s in model.by_type("IfcSpace")]
     serialized = []
     for f in findings:
         record = asdict(f)
@@ -195,6 +216,7 @@ def run(path: str, salva_casa: bool = False) -> dict:
         "schema": model.schema,
         "length_unit_scale_to_m": scale,
         "salva_casa": salva_casa,
+        "thresholds": asdict(thr),
         "spaces_evaluated": len(serialized),
         "violations": len(violations),
         "findings": serialized,
@@ -204,23 +226,29 @@ def run(path: str, salva_casa: bool = False) -> dict:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic ACC checker — Slice A (IT habitability)")
     ap.add_argument("ifc", help="path to the .ifc model")
+    ap.add_argument("--rules", metavar="FILE",
+                    help="compiled rule JSON from parser.py; drives thresholds (else DM-1975 defaults)")
     ap.add_argument("--salva-casa", action="store_true",
                     help="apply the conditional 2.40 m exception (existing buildings)")
     ap.add_argument("--json", metavar="FILE", help="write the full report as JSON")
     args = ap.parse_args(argv)
 
-    report = run(args.ifc, args.salva_casa)
+    thr = Thresholds.from_rules_json(args.rules) if args.rules else Thresholds()
+    report = run(args.ifc, args.salva_casa, thr)
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2, ensure_ascii=False)
 
+    src = f"rules={args.rules}" if args.rules else "defaults(DM-1975)"
     print(f"{report['schema']} | {report['spaces_evaluated']} IfcSpace | "
-          f"{report['violations']} violation(s) | salva_casa={report['salva_casa']}")
+          f"{report['violations']} violation(s) | salva_casa={report['salva_casa']} | "
+          f"H={thr.min_height_habitable_m} A={thr.min_height_accessory_m} "
+          f"SC={thr.min_height_salva_casa_m} aero={round(thr.aero_illuminating_ratio, 4)} [{src}]")
     for f in report["findings"]:
         if f["compliant"] is False:
             print(f"  [X] {f['name']} [{f['occupancy']}] "
                   f"h={f['height_m']}m (>= {f['height_required_m']}) "
-                  f"aero={f['aero_ratio']} (>= {round(AEROILLUM_RATIO, 3)}) {f['notes']}")
+                  f"aero={f['aero_ratio']} (>= {round(thr.aero_illuminating_ratio, 3)}) {f['notes']}")
     return 1 if report["violations"] else 0
 
 

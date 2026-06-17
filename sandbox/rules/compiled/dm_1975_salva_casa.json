@@ -1,0 +1,86 @@
+{
+  "rule": {
+    "id": "IT-DM-1975-HAB",
+    "source": "DM Sanità 5 luglio 1975; DL 69/2024 conv. L 105/2024 (Salva Casa)",
+    "description": "Habitability: minimum internal height and aero-illuminating ratio for dwellings.",
+    "ifc_target": [
+      "IfcSpace",
+      "IfcWindow"
+    ],
+    "applicability": [
+      {
+        "kind": "applicability",
+        "subject": "locale di abitazione",
+        "metric": "use",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "ifc_hint": null,
+        "text": "locali adibiti ad abitazione"
+      }
+    ],
+    "selection": [
+      {
+        "kind": "selection",
+        "subject": "habitable room",
+        "metric": null,
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "ifc_hint": "IfcSpace",
+        "text": "vani abitabili (escl. corridoi, bagni, ripostigli)"
+      }
+    ],
+    "requirement": [
+      {
+        "kind": "requirement",
+        "subject": "habitable room",
+        "metric": "net height",
+        "operator": ">=",
+        "value": 2.7,
+        "unit": "m",
+        "ifc_hint": "Qto_SpaceBaseQuantities.Height",
+        "text": "altezza minima interna utile"
+      },
+      {
+        "kind": "requirement",
+        "subject": "accessory room",
+        "metric": "net height",
+        "operator": ">=",
+        "value": 2.4,
+        "unit": "m",
+        "ifc_hint": "Qto_SpaceBaseQuantities.Height",
+        "text": "riducibile per corridoi, disimpegni, bagni, ripostigli"
+      },
+      {
+        "kind": "requirement",
+        "subject": "window",
+        "metric": "openable area / floor area",
+        "operator": ">=",
+        "value": 0.125,
+        "unit": "ratio",
+        "ifc_hint": "IfcWindow area / IfcSpace NetFloorArea",
+        "text": "superficie finestrata apribile >= 1/8 della superficie del pavimento"
+      }
+    ],
+    "exception": [
+      {
+        "kind": "exception",
+        "subject": "existing building (recupero)",
+        "metric": "net height",
+        "operator": ">=",
+        "value": 2.4,
+        "unit": "m",
+        "ifc_hint": "Qto_SpaceBaseQuantities.Height",
+        "text": "Salva Casa (DPR 380/2001 art. 24 c. 5-bis/5-ter): asseverabile, edificio esistente"
+      }
+    ]
+  },
+  "thresholds": {
+    "min_height_habitable_m": 2.7,
+    "min_height_accessory_m": 2.4,
+    "min_height_salva_casa_m": 2.4,
+    "aero_illuminating_ratio": 0.125
+  },
+  "source": "text-extraction"
+}

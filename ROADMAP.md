@@ -18,7 +18,7 @@
 | Stage | Title | Done when… | Status |
 |---|---|---|---|
 | 0 | Foundation — research baseline + sandbox prototype | Pipeline halves run end-to-end at €0 | ✅ |
-| 1 | **Dynamic wiring** — parser JSON drives the checker | Edit the law text → verdict changes, no `.py` edit | 🔴 |
+| 1 | **Dynamic wiring** — parser JSON drives the checker | Edit the law text → verdict changes, no `.py` edit | ✅ |
 | 2 | **Local brain** — Ollama, 100% offline | Internet off → full cycle runs at €0 locally | 🔴 |
 | 3 | **Multi-software robustness** — stress test | Clean verdict, no runtime errors, on ≥3 IFC from different tools | 🟡 1/3 |
 | 4 | **Graph anchoring** — Knowledge Graph | Checker queries the graph, not a flat file | 🔴 |
@@ -40,7 +40,7 @@ Research baseline and a working sandbox proving the neuro-symbolic bridge on one
 
 ---
 
-## Stage 1 — Dynamic wiring (low-code) 🔴 *(next)*
+## Stage 1 — Dynamic wiring (low-code) ✅ *(done + verified)*
 
 - **Goal:** editing only the law text (`rules/dm_1975_salva_casa.md`) regenerates a JSON
   (e.g. `soglia_altezza: 2.40`) that `checker.py` reads to change its verdict on the 3D model —
@@ -55,6 +55,11 @@ Research baseline and a working sandbox proving the neuro-symbolic bridge on one
   parser, and the verdict on the 3D model changes on its own, with **zero `.py` edits**.
 - **Acceptance test:** flip habitable height to 2,40 in the `.md` → re-parse → FZK-Haus baseline
   violations drop the same way `--salva-casa` does today.
+- **✅ Verified (2026-06-17):** `parser.py --out` emits `{rule, thresholds, source}` from the law
+  text (regex extraction, `source=text-extraction`); `checker.py --rules` drives every threshold
+  from it (constants are now only defaults). Editing `2,70 → 2,40` in the `.md`, re-parsing, and
+  re-checking dropped FZK-Haus baseline **5 → 1** with no `.py` edit (then reverted). The regex
+  extractor is the low-code placeholder Stage 2 replaces with the local LLM.
 
 ---
 
@@ -113,5 +118,8 @@ Research baseline and a working sandbox proving the neuro-symbolic bridge on one
 
 *(append one line per iteration — newest at top)*
 
+- **2026-06-17** — Stage 1 ✅ dynamic wiring: `parser.py` extracts thresholds from the law text →
+  `{rule, thresholds}` JSON → `checker.py --rules`. Verified the `2,70→2,40` edit flips FZK-Haus
+  baseline 5→1 with no Python edit. **Stage 2 (local Ollama) is now the active target.**
 - **2026-06-17** — Roadmap created. Stage 0 ✅ (sandbox verified on FZK-Haus: 5 → 1 violations).
   Stages 1–4 scoped; Stage 1 (dynamic wiring) is the active next target.

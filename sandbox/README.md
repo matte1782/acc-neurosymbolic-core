@@ -40,17 +40,21 @@ sandbox/
 python -m venv .venv && . .venv/Scripts/activate     # Windows; use bin/activate on *nix
 pip install -r requirements.txt
 
-# 1) Neuro — parse the law into a structured rule (no LLM needed for the skeleton):
-python parser.py rules/dm_1975_salva_casa.md --offline
+# 1) Neuro — compile the law text into a rule + thresholds JSON (deterministic, no LLM yet):
+python parser.py rules/dm_1975_salva_casa.md --offline --out rules/compiled/dm_1975_salva_casa.json
 
-# 2) Symbolic — check an IFC model deterministically:
-python checker.py data/AC20-FZK-Haus.ifc
-python checker.py data/AC20-FZK-Haus.ifc --salva-casa --json report.json
+# 2) Symbolic — check an IFC model; thresholds DRIVEN BY that JSON (no hard-coded constants):
+python checker.py data/AC20-FZK-Haus.ifc --rules rules/compiled/dm_1975_salva_casa.json
+python checker.py data/AC20-FZK-Haus.ifc --rules rules/compiled/dm_1975_salva_casa.json --salva-casa
+
+# Stage-1 wiring proof: edit a number in rules/dm_1975_salva_casa.md (e.g. 2,70 → 2,40),
+# re-run step 1, then step 2 — the verdict changes with no Python edit.
 ```
 
-`parser.py` will use a **local** open LLM if one is reachable (set `OLLAMA_HOST`,
-`ACC_LLM_MODEL`, default `llama3.1`), otherwise it falls back to the hand-coded rule so the
-pipeline always runs offline.
+`parser.py` uses a **local** open LLM if reachable (set `OLLAMA_HOST`, `ACC_LLM_MODEL`,
+default `llama3.1`); with `--offline` (or if no LLM) it falls back to **deterministic regex
+extraction** of the thresholds from the law text, so the pipeline always runs offline. The
+compiled `rules/compiled/*.json` is a generated artifact (re-created by step 1).
 
 ## Free test data (`.ifc`) — verified with IfcOpenShell 0.8.5 (2026-06-17)
 
