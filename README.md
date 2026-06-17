@@ -10,10 +10,13 @@ OWL reasoners) performs the actual zero-hallucination compliance check against t
 
 ## Status
 
-Phase 0 — **factual baseline only**. No architecture, code, classes, or database schemas
-have been committed yet. This is deliberate (see *Working constraints*): the factual
-constraints of existing tools and regulatory data structures will dictate the architecture
-in a later phase.
+Stage 0 (foundation) ✅ — the deterministic research baseline is done, and a **sandbox
+prototype** of the neuro-symbolic bridge runs end-to-end on a real IFC model (Slice A:
+Italian habitability, DM 5/7/1975 + Salva Casa). Production progress is tracked stage-by-stage
+in **[`ROADMAP.md`](ROADMAP.md)** — the single source of truth, updated every iteration.
+
+Architecture beyond the sandbox is still intentionally undesigned (see *Working constraints*):
+existing tools and regulatory data structures dictate it, not the other way round.
 
 ## Working constraints
 
@@ -30,13 +33,20 @@ in a later phase.
 ```text
 acc-neurosymbolic-core/
 ├── README.md
+├── ROADMAP.md                # production roadmap (4 stages) — living, updated each iteration
 ├── .gitignore
-└── research/
-    └── FACTUAL_BASELINE.md   # market, competitor, OSS-stack, and ROI baseline
+├── research/
+│   └── FACTUAL_BASELINE.md   # market, competitor, OSS-stack, and ROI baseline
+└── sandbox/                  # Stage-0 prototype of the neuro-symbolic bridge (Slice A)
+    ├── rules/                # raw law + RASE decomposition
+    ├── parser.py             # neuro: NL → RASE rule JSON
+    └── checker.py            # symbolic: IfcOpenShell → deterministic verdict
 ```
 
 ## Generated artefacts
 
+- **[`ROADMAP.md`](ROADMAP.md)** — production roadmap and progress tracker (Stages 1–4).
 - [`research/FACTUAL_BASELINE.md`](research/FACTUAL_BASELINE.md) — the deterministic
   research baseline (competitor matrix, audited OSS stack, quantitative ROI, data
   bottlenecks).
+- [`sandbox/`](sandbox/README.md) — verified end-to-end prototype (Italian habitability slice).
