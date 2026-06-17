@@ -1,0 +1,3 @@
+# Transient per-session scratch written by session_start.sh (not measurement data).
+.session_start_sha
+.session_start_ts
