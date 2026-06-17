@@ -1,0 +1,4 @@
+# Shell hooks must stay LF: under bash, CRLF breaks line-continuations and corrupts emitted JSON.
+# Append-only measurement logs pinned LF (Stop hook appends with LF) to stay deterministic.
+*.sh    text eol=lf
+*.jsonl text eol=lf
