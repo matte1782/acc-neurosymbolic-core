@@ -1,0 +1,4 @@
+# Slice A sandbox — zero-cost, self-hostable stack
+ifcopenshell>=0.8.0    # IFC parsing/quantities (LGPL-3.0); if no wheel for your Python, use conda-forge
+pydantic>=2.0          # rule schema + validation (MIT)
+requests>=2.31         # only for the optional Ollama (local LLM) neuro path (Apache-2.0)
