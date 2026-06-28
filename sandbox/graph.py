@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Optional
 
 from rdflib import Graph, Literal, Namespace, RDF, RDFS
@@ -54,30 +55,38 @@ _DIVERGENCE_PARENT = ACC["Disimpegno"]  # a statute-anchored Art.1 accessory roo
 
 _CLASS_URI = {"accessory": ACC.Accessory, "habitable": ACC.Habitable}
 
-# Single SPARQL 1.1 SELECT. A class matches if (a) one of its :hintText literals is CONTAINS-in the
-# lower-cased "<name> <longName>" label, OR (b) a room-type node carrying a CONTAINS-matching
-# :typeLabel reaches the class via rdfs:subClassOf+ (the transitive-inference path). Accessory-first
-# precedence + strict 'unknown' complement live IN the query: priority BIND (accessory 0 < habitable
-# 1) + ORDER BY + LIMIT 1; no row -> the caller returns 'unknown'. The label is injected via
-# initBindings (never interpolated) so a GlobalId/name with SPARQL-illegal characters is safe.
-_OCCUPANCY_QUERY = """
+# Per-TOKEN SPARQL 1.1 SELECT (M-4 fix). occupancy_via_graph tokenises the label and asks the graph
+# for EACH token's class; this query returns ONE token's class. A class matches a token if (a) one of
+# its :hintText literals is a PREFIX of the token (STRSTARTS), OR (b) a room-type node whose
+# :typeLabel is a prefix of the token reaches the class via rdfs:subClassOf+ (the transitive-
+# inference path). PREFIX (head-stem), not CONTAINS: it still resolves agglutinative compounds (token
+# 'wohnzimmer' starts with 'wohn'; 'badezimmer' with 'bad') while rejecting the internal fragments
+# CONTAINS admitted ('messeraum' does NOT start with 'ess'); cross-word collisions are handled by
+# tokenisation + the caller's aggregation. Accessory-first WITHIN a token: priority BIND (accessory
+# 0 < habitable 1) + ORDER BY + LIMIT 1. The token is injected via initBindings (never interpolated)
+# so a name with SPARQL-illegal characters is safe.
+_TOKEN_QUERY = """
 PREFIX acc: <https://acc.local/ontology#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?cls (IF(?cls = acc:Accessory, 0, 1) AS ?prio) WHERE {
   {
     ?h acc:hintText ?ht ; acc:broaderTerm ?cls .
-    FILTER(CONTAINS(?label, LCASE(STR(?ht))))
+    FILTER(STRSTARTS(?tok, LCASE(STR(?ht))))
   }
   UNION
   {
     ?rt acc:typeLabel ?tl ; rdfs:subClassOf+ ?cls .
     FILTER(?cls IN (acc:Accessory, acc:Habitable))
-    FILTER(CONTAINS(?label, LCASE(STR(?tl))))
+    FILTER(STRSTARTS(?tok, LCASE(STR(?tl))))
   }
 }
 ORDER BY ?prio
 LIMIT 1
 """
+
+# Token boundary: split the lowercased label on any run of NON-letters (whitespace, digits, '-', '/',
+# punctuation), keeping unicode Latin letters incl. accents/umlauts ('à-ÿ' covers ü/ä/ö/è/à/…).
+_TOKEN_SPLIT = re.compile(r"[^a-zà-ÿ]+")
 
 _ONTOLOGY_CACHE: "Optional[Graph]" = None
 
@@ -175,24 +184,48 @@ def _ontology() -> Graph:
 
 
 def occupancy_via_graph(name, long_name, graph: "Optional[Graph]" = None) -> str:
-    """Answer room -> {'accessory'|'habitable'|'unknown'} via a SPARQL query over the ontology.
+    """Answer room -> {'accessory'|'habitable'|'unknown'} via per-TOKEN SPARQL over the ontology.
+
+    M-4 fix (code audit). The old whole-label CONTAINS misclassified mixed/compound names: e.g.
+    'Soggiorno con bagno' (a habitable living room) classified 'accessory' merely because the string
+    contained 'bagno' (relaxing it to the 2.40 m bar AND skipping the 1/8 aero check), and
+    'Messeraum' classified 'habitable' via the internal 'ess' fragment. Now the label is TOKENISED
+    (whitespace/punct/digit boundaries) and each token is classified independently by a head-stem
+    PREFIX match (so agglutinative compounds like 'Wohnzimmer'->'wohn' still resolve while internal
+    fragments do not), then aggregated:
+      - no token classified                                   -> 'unknown'
+      - only accessory token(s)                               -> 'accessory'
+      - any habitable token (incl. a MIXED accessory+habitable phrase) -> 'habitable'
+    Rationale (DM-1975 Art.1): an accessory room is named by a SINGLE enumerated term (bagno,
+    ripostiglio, corridoio, disimpegno); a habitable room may carry an accessory qualifier
+    ('... con bagno'), so a mixed phrase is habitable. 'unknown' is the strict complement and is
+    evaluated like habitable (stricter 2.70 m bar + aero) -> the safe, fail-closed direction.
+    Verdict-neutral on the 3 fixtures: 0/110 spaces reclassified (controls + the 220-/110-row
+    equivalence oracles hold); only previously-misclassified mixed/fragment names move.
 
     Two distinct fail-closed outcomes (assert both, baseline / HARD RULES):
-      - a no-match label -> 'unknown' (the strict complement of accessory ∪ habitable);
-      - an EMPTY / FAILED ontology -> RAISE (never a silent 'unknown' — that would mask a broken
-        graph as a benign no-match).
+      - a no-match label -> 'unknown' (never a silent pass — 'unknown' takes the habitable bar+aero);
+      - an EMPTY / FAILED ontology -> RAISE (never a silent 'unknown' masking a broken graph).
     """
     g = graph if graph is not None else _ontology()
     if not _has_ontology(g):
         raise RuntimeError(
             "occupancy_via_graph: empty/failed ontology — fail-closed (RAISE, not 'unknown')")
     label = " ".join(str(x or "") for x in (name, long_name)).lower()
-    rows = list(g.query(_OCCUPANCY_QUERY, initBindings={"label": Literal(label)}))
-    if not rows:
+    classes = set()
+    for tok in _TOKEN_SPLIT.split(label):
+        if not tok:
+            continue
+        rows = list(g.query(_TOKEN_QUERY, initBindings={"tok": Literal(tok)}))
+        if not rows:
+            continue
+        cls = rows[0][0]
+        if cls == ACC.Accessory:
+            classes.add("accessory")
+        elif cls == ACC.Habitable:
+            classes.add("habitable")
+    if not classes:
         return "unknown"
-    cls = rows[0][0]
-    if cls == ACC.Accessory:
+    if classes == {"accessory"}:
         return "accessory"
-    if cls == ACC.Habitable:
-        return "habitable"
-    return "unknown"
+    return "habitable"   # habitable-only OR mixed accessory+habitable -> habitable (see docstring)

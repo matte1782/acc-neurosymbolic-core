@@ -255,6 +255,38 @@ def test_canary_402_403_unknown_via_query() -> None:
                G.occupancy_via_graph(_label, "Dachboden") == "unknown")
 
 
+# ============================ M-4 — tokenized head-stem classification (audit fix) ========
+# occupancy_via_graph now tokenises the label and prefix-matches each token, aggregating mixed
+# phrases to habitable. This fixes the substring trap (a habitable room relaxed to the accessory bar
+# because the phrase contained an accessory word, or a room mis-tagged via an internal fragment)
+# WITHOUT regressing agglutinative German compounds. Verdict-neutrality on the fixtures is enforced
+# by reproduction_no_drift_vs_oracle (110 rows) above + test_applicability_table (220 rows).
+def test_m4_tokenized_classification() -> None:
+    cases = [
+        # the audit's headline trap: a habitable living room with an ensuite is HABITABLE, not
+        # accessory — it must keep the 2.70 m bar AND its 1/8 aero check.
+        ("Soggiorno con bagno", "", "habitable"),
+        ("Camera con bagno", "", "habitable"),
+        # internal-fragment false positives are gone (prefix, not substring): 'messeraum' !startswith 'ess'.
+        ("Messeraum", "", "unknown"),
+        # single enumerated accessory terms still classify accessory.
+        ("Bagno", "", "accessory"),
+        ("Ripostiglio", "", "accessory"),
+        ("Soggiorno", "", "habitable"),
+        # agglutinative German compounds still resolve via the head stem (no regression).
+        ("Wohnzimmer", "", "habitable"),
+        ("Schlafzimmer", "", "habitable"),
+        ("Badezimmer", "", "accessory"),       # single token: accessory-first within token ('bad')
+        ("Technikraum", "", "accessory"),
+        ("Abstellraum", "", "accessory"),
+        # mixed German phrase aggregates to habitable (habitable token present).
+        ("Wohnen mit Abstellraum", "", "habitable"),
+    ]
+    for name, longname, want in cases:
+        got = G.occupancy_via_graph(name, longname)
+        _check(f"m4[{name!r}]=={want}", got == want)
+
+
 def main() -> int:
     test_reproduces_oracle_occupancy()
     test_divergence_room_load_bearing()
@@ -263,6 +295,7 @@ def main() -> int:
     test_classify_substring_branch_replaced()
     test_room_in_store_globalid_exact()
     test_canary_402_403_unknown_via_query()
+    test_m4_tokenized_classification()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 
