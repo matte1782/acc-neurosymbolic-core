@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from dataclasses import asdict, dataclass, field
@@ -273,15 +274,24 @@ _SPACE_HEIGHT_KEYS = ("Height", "ClearHeight", "FinishCeilingHeight", "NetHeight
 
 
 def _qty(element, scale: float, pset_names, key: str, power: int = 1) -> Optional[float]:
-    """Read a quantity from the first matching (Q)set name, converting length**power to metres."""
+    """Read a quantity from the first matching (Q)set name, converting length**power to metres.
+
+    POSITIVITY (P0 audit, C-1/M-5): a height/area/length is physically > 0. A non-positive or
+    non-finite value (negative, zero, NaN, inf) is rejected -> None (undetermined), never consumed
+    as a real measurement. Returning a negative/zero quantity would fabricate a pass (or a
+    nonsensical aero ratio over a non-positive denominator). Fail-closed: a present-but-garbage
+    quantity becomes 'unmeasurable', not a laundered value."""
     qtos = ue.get_psets(element, qtos_only=True)  # 'id'/'type' helper keys are ignored by .get(key)
     for name in pset_names:
         raw = qtos.get(name, {}).get(key)
         if raw is not None:
             try:
-                return float(raw) * (scale ** power)
+                val = float(raw) * (scale ** power)
             except (TypeError, ValueError):
                 return None
+            if not math.isfinite(val) or val <= 0:
+                return None
+            return val
     return None
 
 
@@ -299,17 +309,28 @@ def space_height(space, scale: float) -> Optional[float]:
 def space_floor_area(space, scale: float) -> Optional[float]:
     for key in ("NetFloorArea", "GrossFloorArea"):
         val = _qty(space, scale, _SPACE_QTO, key, power=2)
-        if val:
-            return val
+        if val is not None and val > 0:   # positivity (P0 audit, M-5): a negative/zero area is never
+            return val                    # consumed as the aero denominator; _qty also guards now
     return None
 
 
 def window_area(win, scale: float) -> Optional[float]:
     # Prefer the direct OverallHeight x OverallWidth attributes: vendor-independent and
     # populated 100% across all tested models, whereas Qto_WindowBaseQuantities is often absent.
+    # POSITIVITY + TYPE GUARD (P0 audit, C-1/M-3): the old `if h and w` admitted negatives (truthy),
+    # so two negative IfcLengthMeasure dims fabricated a POSITIVE area -> a habitable space could
+    # false-pass its 1/8 aero check on garbage geometry; and the bare float() crashed the whole
+    # report on a non-numeric vendor dim. Require BOTH dims present, numeric, finite, and > 0
+    # (checking each dim, not just the product, so -h * -w cannot sneak through); otherwise fall
+    # through to the positivity-guarded Qto reading, else None (undetermined). Never a fabricated area.
     h, w = getattr(win, "OverallHeight", None), getattr(win, "OverallWidth", None)
-    if h and w:
-        return float(h) * float(w) * (scale ** 2)
+    if h is not None and w is not None:
+        try:
+            hf, wf = float(h), float(w)
+        except (TypeError, ValueError):
+            hf = wf = None
+        if hf is not None and math.isfinite(hf) and math.isfinite(wf) and hf > 0 and wf > 0:
+            return hf * wf * (scale ** 2)
     return _qty(win, scale, _WINDOW_QTO, "Area", power=2)
 
 
@@ -550,10 +571,39 @@ def materialize_ifcspaces(model, scale: float):
     return store
 
 
+def _has_length_unit(model) -> bool:
+    """True iff the model declares an explicit project LENGTHUNIT (IfcSIUnit or
+    IfcConversionBasedUnit with UnitType=='LENGTHUNIT') in IfcProject.UnitsInContext."""
+    for proj in model.by_type("IfcProject"):
+        uic = getattr(proj, "UnitsInContext", None)
+        if uic is None:
+            continue
+        for unit in (getattr(uic, "Units", None) or []):
+            if getattr(unit, "UnitType", None) == "LENGTHUNIT":
+                return True
+    return False
+
+
+def length_scale_to_m(model) -> float:
+    """Resolve the project length-unit scale to metres, FAIL-CLOSED (P0 audit, C-2).
+
+    ifcopenshell.util.unit.calculate_unit_scale() silently returns 1.0 when there is no IfcProject /
+    no UnitsInContext / no LENGTHUNIT entry — which would read a millimetre-authored model as metres
+    (a 1000x under-read: a 2500 mm room becomes 2500 m and trivially clears the 2.70 m bar -> a
+    silent false pass). Refuse to guess: require an explicit LENGTHUNIT, else RAISE (the model is not
+    certifiable). A model genuinely authored in metres still carries a METRE LENGTHUNIT and resolves
+    to 1.0 normally — only the absent-unit case raises."""
+    if not _has_length_unit(model):
+        raise ValueError(
+            "no project LENGTHUNIT resolved — refusing to assume metres (an absent unit would "
+            "silently 1000x-misread a millimetre model); model is not certifiable")
+    return uu.calculate_unit_scale(model)
+
+
 def run(path: str, salva_casa: bool = False, thr: Optional["Thresholds"] = None) -> dict:
     thr = thr or Thresholds()
     model = ifcopenshell.open(path)
-    scale = uu.calculate_unit_scale(model)  # project length unit -> metres
+    scale = length_scale_to_m(model)  # project length unit -> metres; RAISES if no LENGTHUNIT (C-2)
     findings = [check_space(s, scale, salva_casa, thr) for s in model.by_type("IfcSpace")]
     # Stage 4b: materialize the rooms into a per-run store each run (the room-in-store proof). The
     # verdict already flowed through the ontology query in classify(); this is the architectural
@@ -626,9 +676,17 @@ def main(argv=None) -> int:
                 print(f"  [?] {f['name']} [{f['occupancy']}] "
                       f"h={f['height_m']} area={f['floor_area_m2']} win={f['window_area_m2']} "
                       f"{f['notes']}")
-    # Exit non-zero on violations OR undetermined spaces: returning success (0) on a model where
-    # nothing could be measured would itself be the silent compliant-pass this stage forbids.
-    return 1 if (report["violations"] or undetermined) else 0
+    # H-1 (P0 audit): a model with ZERO IfcSpace evaluated is uncheckable, not compliant. Findings
+    # derive only from IfcSpace, so spaces_evaluated==0 gives 0 violations / 0 undetermined and would
+    # otherwise exit 0 — a vacuous pass below the per-space keystone's granularity. Treat it as
+    # not-certifiable (e.g. rooms modeled as IfcZone/IfcBuildingElementProxy, or an empty model).
+    no_spaces = report["spaces_evaluated"] == 0
+    if no_spaces:
+        print("  --- 0 IfcSpace evaluated - nothing measurable, model not certifiable ---")
+    # Exit non-zero on violations OR undetermined spaces OR an unevaluable (no-space) model:
+    # returning success (0) when nothing could be measured would be the silent compliant-pass this
+    # stage forbids.
+    return 1 if (report["violations"] or undetermined or no_spaces) else 0
 
 
 if __name__ == "__main__":
