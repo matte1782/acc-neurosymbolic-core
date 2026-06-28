@@ -34,6 +34,10 @@ Thumbs.db
 models/
 data/raw/
 
+# Diagnostic artifacts (Stage 3 probes — regenerated from the .ifc fixtures, not source)
+sandbox/data/*_report*.json
+sandbox/probe_*.py
+
 # Local LLM weights
 *.gguf
 *.safetensors

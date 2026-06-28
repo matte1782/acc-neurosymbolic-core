@@ -2,3 +2,5 @@
 ifcopenshell>=0.8.0    # IFC parsing/quantities (LGPL-3.0); if no wheel for your Python, use conda-forge
 pydantic>=2.0          # rule schema + validation (MIT)
 requests>=2.31         # only for the optional Ollama (local LLM) neuro path (Apache-2.0)
+rdflib==7.6.0          # Stage 4b graph: rdflib store + SPARQL 1.1 (BSD-3); Oxigraph is a one-line
+                       # backend swap (standard Store API); Neo4j rejected (GPL-3.0 on a commercial asset)

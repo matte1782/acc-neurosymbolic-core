@@ -1,0 +1,1762 @@
+{
+"data/AC20-FZK-Haus.ifc|False|347jFE2yX7IhCEIALmupEH": [
+"habitable",
+2.7,
+true,
+false,
+true,
+false
+],
+"data/AC20-FZK-Haus.ifc|False|0e_hbkIQ5DMQlIJ$2V3j_m": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-FZK-Haus.ifc|False|2RSCzLOBz4FAK$_wE8VckM": [
+"habitable",
+2.7,
+true,
+false,
+true,
+false
+],
+"data/AC20-FZK-Haus.ifc|False|0Lt8gR_E9ESeGH5uY_g9e9": [
+"habitable",
+2.7,
+true,
+false,
+true,
+false
+],
+"data/AC20-FZK-Haus.ifc|False|3$f2p7VyLB7eox67SA_zKE": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-FZK-Haus.ifc|False|17JZcMFrf5tOftUTidA0d3": [
+"habitable",
+2.7,
+true,
+false,
+true,
+false
+],
+"data/AC20-FZK-Haus.ifc|False|2dQFggKBb1fOc1CqZDIDlx": [
+"habitable",
+2.7,
+true,
+true,
+false,
+false
+],
+"data/AC20-FZK-Haus.ifc|True|347jFE2yX7IhCEIALmupEH": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-FZK-Haus.ifc|True|0e_hbkIQ5DMQlIJ$2V3j_m": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-FZK-Haus.ifc|True|2RSCzLOBz4FAK$_wE8VckM": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-FZK-Haus.ifc|True|0Lt8gR_E9ESeGH5uY_g9e9": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-FZK-Haus.ifc|True|3$f2p7VyLB7eox67SA_zKE": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-FZK-Haus.ifc|True|17JZcMFrf5tOftUTidA0d3": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-FZK-Haus.ifc|True|2dQFggKBb1fOc1CqZDIDlx": [
+"habitable",
+2.4,
+true,
+true,
+false,
+false
+],
+"data/AC20-Institute-Var-2.ifc|False|3UEb2iq7D2tOgbX6Mufs$X": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2xcLNHPon6VO6wB_n0EQLF": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2Hh$tXimL1_Aogi9jn1cZ4": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2sVpKMTdb3u8IUv50wOLpo": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0V74RtuUH1zQt_CcawQbBc": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0dXE$xLxz8MwbtYoTqJPiO": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2G3Zgh3YLFBxViczryC8tv": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1pG7ErnqL79fYOSoJhY$mD": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2NO$Il8fr1n8x3zsU1IoYc": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3vTaz$m4D7Mw20Cj4ZCMEW": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|29dtO28k16G9baf14UO37j": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3YOWN6kp53UhVDk7gccfjD": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|25NDKbpWH5r94ho13fJMeb": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3cjnMny5DF0g1J6kKZWO4Y": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2Zmi8kumn3P9N9wBPT48lG": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3Gz7u_d1P7IA35Wmtg48Rc": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1nsRm1QQb1xwWpzzFR7Ax3": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3EN96kdYDB2OOGjNLp8e86": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1_Evy7T$DCiwLgTMLHCRoe": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3eQ_MQ5er5UeRXq4xxAoKl": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3KaloR8018sAKZVwuYVbSu": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|03hhkFXKT4RPFNu5rDrZPL": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1oKaKV7Wz8IOJ10cA1PGWP": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3j5r$vfHT3JfqUfpdRoXnP": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3t8qjHTuTAigDlC1x7D16b": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1DxredyET5bf_85HZe8$FO": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2ED0MLfrf17BXIsuJYCs7R": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1loQAAB191MA5YmsaMJHkI": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3Xu6SpY4vC89stuKlMWE2n": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3yAAZZ86j388XApaG$h1X6": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3$FatfHY1Cg9apAMwbKPN8": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0_TtqXcOrDbeTXyb5q0Uxb": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|25QUQJ9jHAFengkpc9N7GR": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0jhU4VZ6XCxee3pjfx5VMh": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1RP4kkhTDFJuLugWfrM_1s": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|25CC32yK130ALlKsnej9JW": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|37pP75EaP1axQNg3rWc_WT": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0f6kjO4cnBngLgZgtaoBTE": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3XJSZHVdLFTQTPYNfhA6a2": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1AW8GAtUnEYB9XPWOUYKK5": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0uPiF9LkPAqeB8f54Uy3_C": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|24vVAUYDH2SetutQQsZBMv": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2goaA6RR92B9xducYbaQVU": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0i4GPkF$j1$P1_N4yoKfHm": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2Yd3UbuHLF0P7Q5pq$wqrF": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1GtYUXG753_h6i4vKAf46v": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0VWZeARNT8IAUcPL5OoYiA": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3kV3mGMIX3BvUw5dL_lJVg": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1yZQvqj15Ab8eMXDuz85Dy": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0uC7OD3$5F7v$zL3aaoEig": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2E2TaOnqD0chpbuH8tXCpW": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3shuyF_Yb7yu2P$QLB2s8G": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0UiHARbFzF1RT4g_GKem_B": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1LVv$xQpj6k8KE6pcNlDDU": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1a3ixYyUn0QO4HWUYKN$4p": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3iSzpa9d93jhTDB7hG0QBW": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0K6ICBa1zCjvUnsy8qMIRC": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3M3dydUxH2hR7Uvg9QNhS$": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2lebmw3XD9w9PIIn4HKbwh": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|09m2tgyfr9UfikvrKFMkeD": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0dc6ovxJLDww6sjSpu_cfN": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0U5AcnRYX7aw$OIZXqMUaR": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1jJ7opRcX6uevup8Hnq0$2": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|30oDtenHrAwuYDgWTayiN$": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3$PC9MkEH1Ex24UD3VHyzP": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0Veunyhgf7QxfJXezc1Ydu": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1vWhxAiTL1RR3r4R3eC2Vv": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3uvYP4OyH5ufyPIMbZD86h": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0oB0YIgnPE49CsBpGIdxOR": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3jurQKaejCqgtlRMQvYO$h": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1I4mvNGj58VPS4IqdvGDOQ": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3BlfjPTqH1qeG63Yox0pCX": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|1qHIiTcLf7zwz3pTXujZ3t": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|0jh6L39QvEQu8mVKX3j43f": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3zaEFaiGrF1ftyFPQrOe_i": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3i9iiZlcT5eQkuRPP$TrLS": [
+"habitable",
+2.7,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3gYFdGsxTBa9PFlMvRAaiF": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|2mSYEw1YLDvhMYvUr3eREJ": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3CXBDjcSTES8AedjLKSfJe": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|False|3txvJd9V1BPhyU$48F$mnF": [
+"unknown",
+2.7,
+true,
+true,
+false,
+false
+],
+"data/AC20-Institute-Var-2.ifc|False|0jbV$RErb7o9P7rp7ALEd$": [
+"unknown",
+2.7,
+true,
+true,
+false,
+false
+],
+"data/AC20-Institute-Var-2.ifc|False|2_rG4oliv3CxmStpGPieup": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3UEb2iq7D2tOgbX6Mufs$X": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2xcLNHPon6VO6wB_n0EQLF": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2Hh$tXimL1_Aogi9jn1cZ4": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2sVpKMTdb3u8IUv50wOLpo": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0V74RtuUH1zQt_CcawQbBc": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0dXE$xLxz8MwbtYoTqJPiO": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2G3Zgh3YLFBxViczryC8tv": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1pG7ErnqL79fYOSoJhY$mD": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2NO$Il8fr1n8x3zsU1IoYc": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3vTaz$m4D7Mw20Cj4ZCMEW": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|29dtO28k16G9baf14UO37j": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3YOWN6kp53UhVDk7gccfjD": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|25NDKbpWH5r94ho13fJMeb": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3cjnMny5DF0g1J6kKZWO4Y": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2Zmi8kumn3P9N9wBPT48lG": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3Gz7u_d1P7IA35Wmtg48Rc": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1nsRm1QQb1xwWpzzFR7Ax3": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3EN96kdYDB2OOGjNLp8e86": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1_Evy7T$DCiwLgTMLHCRoe": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3eQ_MQ5er5UeRXq4xxAoKl": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3KaloR8018sAKZVwuYVbSu": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|03hhkFXKT4RPFNu5rDrZPL": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1oKaKV7Wz8IOJ10cA1PGWP": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3j5r$vfHT3JfqUfpdRoXnP": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3t8qjHTuTAigDlC1x7D16b": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1DxredyET5bf_85HZe8$FO": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2ED0MLfrf17BXIsuJYCs7R": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1loQAAB191MA5YmsaMJHkI": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3Xu6SpY4vC89stuKlMWE2n": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3yAAZZ86j388XApaG$h1X6": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3$FatfHY1Cg9apAMwbKPN8": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0_TtqXcOrDbeTXyb5q0Uxb": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|25QUQJ9jHAFengkpc9N7GR": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0jhU4VZ6XCxee3pjfx5VMh": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1RP4kkhTDFJuLugWfrM_1s": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|25CC32yK130ALlKsnej9JW": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|37pP75EaP1axQNg3rWc_WT": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0f6kjO4cnBngLgZgtaoBTE": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3XJSZHVdLFTQTPYNfhA6a2": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1AW8GAtUnEYB9XPWOUYKK5": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0uPiF9LkPAqeB8f54Uy3_C": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|24vVAUYDH2SetutQQsZBMv": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2goaA6RR92B9xducYbaQVU": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0i4GPkF$j1$P1_N4yoKfHm": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2Yd3UbuHLF0P7Q5pq$wqrF": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1GtYUXG753_h6i4vKAf46v": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0VWZeARNT8IAUcPL5OoYiA": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3kV3mGMIX3BvUw5dL_lJVg": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1yZQvqj15Ab8eMXDuz85Dy": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0uC7OD3$5F7v$zL3aaoEig": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2E2TaOnqD0chpbuH8tXCpW": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3shuyF_Yb7yu2P$QLB2s8G": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0UiHARbFzF1RT4g_GKem_B": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1LVv$xQpj6k8KE6pcNlDDU": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1a3ixYyUn0QO4HWUYKN$4p": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3iSzpa9d93jhTDB7hG0QBW": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0K6ICBa1zCjvUnsy8qMIRC": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3M3dydUxH2hR7Uvg9QNhS$": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2lebmw3XD9w9PIIn4HKbwh": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|09m2tgyfr9UfikvrKFMkeD": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0dc6ovxJLDww6sjSpu_cfN": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0U5AcnRYX7aw$OIZXqMUaR": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1jJ7opRcX6uevup8Hnq0$2": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|30oDtenHrAwuYDgWTayiN$": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3$PC9MkEH1Ex24UD3VHyzP": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0Veunyhgf7QxfJXezc1Ydu": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1vWhxAiTL1RR3r4R3eC2Vv": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3uvYP4OyH5ufyPIMbZD86h": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0oB0YIgnPE49CsBpGIdxOR": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3jurQKaejCqgtlRMQvYO$h": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1I4mvNGj58VPS4IqdvGDOQ": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3BlfjPTqH1qeG63Yox0pCX": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|1qHIiTcLf7zwz3pTXujZ3t": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|0jh6L39QvEQu8mVKX3j43f": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3zaEFaiGrF1ftyFPQrOe_i": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3i9iiZlcT5eQkuRPP$TrLS": [
+"habitable",
+2.4,
+true,
+true,
+true,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3gYFdGsxTBa9PFlMvRAaiF": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|2mSYEw1YLDvhMYvUr3eREJ": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3CXBDjcSTES8AedjLKSfJe": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/AC20-Institute-Var-2.ifc|True|3txvJd9V1BPhyU$48F$mnF": [
+"unknown",
+2.4,
+true,
+true,
+false,
+false
+],
+"data/AC20-Institute-Var-2.ifc|True|0jbV$RErb7o9P7rp7ALEd$": [
+"unknown",
+2.4,
+true,
+true,
+false,
+false
+],
+"data/AC20-Institute-Var-2.ifc|True|2_rG4oliv3CxmStpGPieup": [
+"accessory",
+2.4,
+false,
+true,
+null,
+true
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXrr": [
+"unknown",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXri": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_3P": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_3Q": [
+"unknown",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_3G": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|2gRXFgjRn2HPE$YoDLX3FV": [
+"unknown",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|2gRXFgjRn2HPE$YoDLX3FC": [
+"unknown",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|10mjSDZJj9gPS2PrQaxa3z": [
+"unknown",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|10mjSDZJj9gPS2PrQaxa4o": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0pNy6pOyf7JPmXRLgxs3sW": [
+"unknown",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_CZ": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXr2": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXr$": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_3S": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_3C": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXre": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXru": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_39": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXrc": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dl_3A": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|False|0BTBFw6f90Nfh9rP1dlXrb": [
+"habitable",
+2.7,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXrr": [
+"unknown",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXri": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_3P": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_3Q": [
+"unknown",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_3G": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|2gRXFgjRn2HPE$YoDLX3FV": [
+"unknown",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|2gRXFgjRn2HPE$YoDLX3FC": [
+"unknown",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|10mjSDZJj9gPS2PrQaxa3z": [
+"unknown",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|10mjSDZJj9gPS2PrQaxa4o": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0pNy6pOyf7JPmXRLgxs3sW": [
+"unknown",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_CZ": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXr2": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXr$": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_3S": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_3C": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXre": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXru": [
+"accessory",
+2.4,
+false,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_39": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXrc": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dl_3A": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+],
+"data/Duplex_A_20110907.ifc|True|0BTBFw6f90Nfh9rP1dlXrb": [
+"habitable",
+2.4,
+true,
+null,
+null,
+null
+]
+}

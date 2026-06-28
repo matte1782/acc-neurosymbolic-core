@@ -1,78 +1,104 @@
 {
   "rule": {
-    "id": "IT-DM-1975-HAB",
-    "source": "DM Sanità 5 luglio 1975; DL 69/2024 conv. L 105/2024 (Salva Casa)",
-    "description": "Habitability: minimum internal height and aero-illuminating ratio for dwellings.",
-    "ifc_target": [
-      "IfcSpace",
-      "IfcWindow"
-    ],
-    "applicability": [
-      {
-        "kind": "applicability",
-        "subject": "locale di abitazione",
-        "metric": "use",
-        "operator": null,
-        "value": null,
-        "unit": null,
-        "ifc_hint": null,
-        "text": "locali adibiti ad abitazione"
-      }
-    ],
+    "id": "A",
+    "source": "Italian habitability rule",
+    "description": "",
+    "ifc_target": [],
+    "applicability": [],
     "selection": [
       {
         "kind": "selection",
         "subject": "habitable room",
-        "metric": null,
+        "metric": "occupancy",
         "operator": null,
         "value": null,
         "unit": null,
         "ifc_hint": "IfcSpace",
-        "text": "vani abitabili (escl. corridoi, bagni, ripostigli)"
+        "text": "vani abitabili (locali adibiti ad abitazione), esclusi gli accessori enumerati dall'Art.1 DM 5 luglio 1975: bagni, corridoi, disimpegni, gabinetti, ripostigli"
+      },
+      {
+        "kind": "selection",
+        "subject": "accessory room",
+        "metric": "occupancy",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "ifc_hint": "IfcSpace",
+        "text": "accessorio Art.1 DM 5 luglio 1975 (bagni, corridoi, disimpegni, gabinetti, ripostigli); hint 'corrid' anchored to statute term 'corridoi'"
+      },
+      {
+        "kind": "selection",
+        "subject": "accessory room",
+        "metric": "occupancy",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "ifc_hint": "IfcSpace",
+        "text": "accessorio Art.1 DM 5 luglio 1975 (bagni, corridoi, disimpegni, gabinetti, ripostigli); hint 'disimpegno' anchored to statute term 'disimpegni'"
+      },
+      {
+        "kind": "selection",
+        "subject": "accessory room",
+        "metric": "occupancy",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "ifc_hint": "IfcSpace",
+        "text": "accessorio Art.1 DM 5 luglio 1975 (bagni, corridoi, disimpegni, gabinetti, ripostigli); hint 'bagno' anchored to statute term 'bagni'"
+      },
+      {
+        "kind": "selection",
+        "subject": "accessory room",
+        "metric": "occupancy",
+        "operator": null,
+        "value": null,
+        "unit": null,
+        "ifc_hint": "IfcSpace",
+        "text": "accessorio Art.1 DM 5 luglio 1975 (bagni, corridoi, disimpegni, gabinetti, ripostigli); hint 'ripostiglio' anchored to statute term 'ripostigli'"
       }
     ],
     "requirement": [
       {
         "kind": "requirement",
-        "subject": "habitable room",
-        "metric": "net height",
+        "subject": "locale adibito ad abitazione",
+        "metric": null,
         "operator": ">=",
         "value": 2.7,
         "unit": "m",
-        "ifc_hint": "Qto_SpaceBaseQuantities.Height",
-        "text": "altezza minima interna utile"
+        "ifc_hint": null,
+        "text": "L'altezza minima interna utile dei locali adibiti ad abitazione è fissata in m 2,70"
       },
       {
         "kind": "requirement",
-        "subject": "accessory room",
-        "metric": "net height",
+        "subject": "locale adibito ad abitazione",
+        "metric": null,
         "operator": ">=",
         "value": 2.4,
         "unit": "m",
-        "ifc_hint": "Qto_SpaceBaseQuantities.Height",
-        "text": "riducibile per corridoi, disimpegni, bagni, ripostigli"
+        "ifc_hint": null,
+        "text": "riducibile a m 2,40 per i corridoi, i disimpegni in genere, i bagni, i gabinetti ed i ripostigli."
       },
       {
         "kind": "requirement",
-        "subject": "window",
-        "metric": "openable area / floor area",
+        "subject": "locale adibito ad abitazione",
+        "metric": null,
         "operator": ">=",
         "value": 0.125,
         "unit": "ratio",
-        "ifc_hint": "IfcWindow area / IfcSpace NetFloorArea",
-        "text": "superficie finestrata apribile >= 1/8 della superficie del pavimento"
+        "ifc_hint": null,
+        "text": "in ogni caso la superficie finestrata apribile non potrà essere inferiore a 1/8 della superficie del pavimento"
       }
     ],
     "exception": [
       {
         "kind": "exception",
-        "subject": "existing building (recupero)",
-        "metric": "net height",
+        "subject": "existing building",
+        "metric": null,
         "operator": ">=",
         "value": 2.4,
         "unit": "m",
-        "ifc_hint": "Qto_SpaceBaseQuantities.Height",
-        "text": "Salva Casa (DPR 380/2001 art. 24 c. 5-bis/5-ter): asseverabile, edificio esistente"
+        "ifc_hint": null,
+        "text": "minimum internal height 2,40 m (derogating the 2,70 m baseline); alloggio monostanza minimum surface (incl. services) 20 m² (1 person) / 28 m² (2 persons)."
       }
     ]
   },
@@ -82,5 +108,5 @@
     "min_height_salva_casa_m": 2.4,
     "aero_illuminating_ratio": 0.125
   },
-  "source": "text-extraction"
+  "source": "llm"
 }

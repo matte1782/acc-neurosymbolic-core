@@ -1,0 +1,98 @@
+{
+  "_comment": "Stage 4 Part 2 — externalized applicability/selection table for DM 1975 + Salva Casa. classify()/check_space() in checker.py read this at runtime. Generated from checker.py's frozen hint tuples; a load-time guard pins it set-equal to them incl. codepoints. 'unknown' is the STRICT COMPLEMENT of accessory∪habitable and is intentionally NOT stored. provenance/statute_anchor are CARRIED for Part 3 (gate anchoring) but NOT verified here.",
+  "rule_id": "dm1975-art1+art5",
+  "occupancy_classes": {
+    "accessory": {
+      "height_metric": "accessory",
+      "aero_applies": false,
+      "_note": "lower 2.40 m height bar; aero 1/8 N/A (separate ventilation rules).",
+      "hint_groups": [
+        {
+          "provenance": "art1",
+          "statute_anchor": "DM1975-art1",
+          "_note": "accessory rooms literally enumerated in DM-1975 Art.1 (dm_1975_salva_casa.md:9-10) — the only gate-anchorable accessory tokens (Part 3). gabinetti is carried via synonyms wc/toilet below.",
+          "hints": [
+            "corrid",
+            "disimpegno",
+            "bagno",
+            "ripostiglio"
+          ]
+        },
+        {
+          "provenance": "cross-lingual-glossary",
+          "statute_anchor": null,
+          "_note": "English + non-enumerated Italian (ingresso/lavanderia) + German/KIT (Stage 3) accessory synonyms — NO Italian-statute anchor; declared named debt (baseline §7), test-pinned, not over-claimed as verified.",
+          "hints": [
+            "wc",
+            "toilet",
+            "bath",
+            "closet",
+            "hall",
+            "ingresso",
+            "storage",
+            "lavanderia",
+            "laundry",
+            "flur",
+            "diele",
+            "bad",
+            "abstell",
+            "keller",
+            "treppe",
+            "gaste",
+            "gäste",
+            "speis",
+            "technik",
+            "hwr",
+            "garage"
+          ]
+        }
+      ]
+    },
+    "habitable": {
+      "height_metric": "habitable",
+      "aero_applies": true,
+      "_note": "2.70 m height bar; aero 1/8 applies. Salva-Casa swaps the bar to 2.40 m.",
+      "hint_groups": [
+        {
+          "provenance": "cross-lingual-glossary",
+          "statute_anchor": null,
+          "_note": "Art.1 does NOT enumerate habitable room types (habitable is the complement, 'locali adibiti ad abitazione'); every habitable hint is an unanchored heuristic = named debt (baseline §7).",
+          "hints": [
+            "living",
+            "soggiorno",
+            "bed",
+            "letto",
+            "camera",
+            "kitchen",
+            "cucina",
+            "dining",
+            "pranzo",
+            "studio",
+            "room",
+            "stanza",
+            "wohn",
+            "schlaf",
+            "kuche",
+            "küche",
+            "kind",
+            "ess",
+            "zimmer",
+            "galerie",
+            "buro",
+            "büro",
+            "buero",
+            "labor",
+            "seminar",
+            "besprechung"
+          ]
+        }
+      ]
+    }
+  },
+  "salva_casa_regime": {
+    "_note": "Comma 5-ter is a cumulative-AND SCENARIO (recupero/cambio d'uso + adattabilità DM 236/1989 + concurrent ristrutturazione), not a per-field flag. Modelled here as the height swap it produces for non-accessory rooms; the AND-conditions are Part 4/gate scope.",
+    "swaps": {
+      "non_accessory_height": "min_height_salva_casa_m"
+    }
+  }
+}
