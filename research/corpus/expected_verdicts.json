@@ -1,0 +1,36 @@
+{
+  "c1_neg_window.ifc": {
+    "pathology": "serving window OverallHeight/Width set to -50/-50 (schema-invalid IfcPositiveLengthMeasure) on a habitable aero-violation space",
+    "target_gid": "2dQFggKBb1fOc1CqZDIDlx",
+    "expected_total_violations": 5,
+    "target_must_not_be_compliant": true,
+    "spec_rationale": "IfcPositiveLengthMeasure must be > 0; a non-positive dim yields no valid area (DM1975 art.5 numerator = valid windows only) -> the space remains the aero violation it already is; FZK total stays 5.",
+    "prefix_defect_expected": "pre-fix fabricates +2500 m2 -> space compliant -> FZK 4 (false pass)"
+  },
+  "c1_zero_window.ifc": {
+    "pathology": "serving window dims set to 0/0",
+    "target_gid": "2dQFggKBb1fOc1CqZDIDlx",
+    "expected_total_violations": 5,
+    "target_must_not_be_compliant": true,
+    "spec_rationale": "zero area is not a valid window; space stays a violation; FZK 5.",
+    "prefix_defect_expected": "none (0 is falsy; pre-fix also fell through) — no-crash control"
+  },
+  "c2_no_unit.ifc": {
+    "pathology": "LENGTHUNIT removed from IfcProject.UnitsInContext",
+    "expected": "not_certifiable",
+    "spec_rationale": "no declared length unit -> scale undefined -> model cannot be measured -> must be REFUSED (not assumed metres).",
+    "prefix_defect_expected": "pre-fix: calculate_unit_scale silently returns 1.0 -> proceeds and emits a normal verdict (the defect)."
+  },
+  "c2_empty_units.ifc": {
+    "pathology": "IfcUnitAssignment.Units emptied",
+    "expected": "not_certifiable",
+    "spec_rationale": "no resolvable LENGTHUNIT -> refuse.",
+    "prefix_defect_expected": "pre-fix proceeds at scale 1.0."
+  },
+  "c2_mm_declared.ifc": {
+    "pathology": "SI length unit prefix set to MILLI (declared millimetres)",
+    "expected": "processes",
+    "spec_rationale": "a declared length unit is resolvable -> scale 0.001 -> the checker runs (it must NOT refuse a file that declares its unit). GATE-N over-reject guard.",
+    "prefix_defect_expected": "n/a (control): both pre-fix and fix process it."
+  }
+}

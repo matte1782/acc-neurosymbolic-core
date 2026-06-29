@@ -38,6 +38,11 @@ data/raw/
 sandbox/data/*_report*.json
 sandbox/probe_*.py
 
+# Audit research: the adversarial corpus .ifc are covered by *.ifc above (regenerable via
+# research/corpus/gen_adversarial.py); the run output is regenerable too. The pinned
+# expected_verdicts.json (the external oracle) IS tracked.
+research/corpus/corpus_results.json
+
 # Local LLM weights
 *.gguf
 *.safetensors
