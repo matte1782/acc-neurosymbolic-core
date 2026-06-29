@@ -15,6 +15,14 @@
     "spec_rationale": "zero area is not a valid window; space stays a violation; FZK 5.",
     "prefix_defect_expected": "none (0 is falsy; pre-fix also fell through) — no-crash control"
   },
+  "c1_absurd_pos_window.ifc": {
+    "pathology": "serving window OverallHeight/Width set to 500/500 (250000 m2, >> 74.5 floor)",
+    "target_gid": "2dQFggKBb1fOc1CqZDIDlx",
+    "expected_total_violations": 4,
+    "target_must_not_be_compliant": true,
+    "spec_rationale": "a 250000 m2 window on a 74.5 m2 floor is non-physical -> untrustworthy -> aero unbounded -> space undetermined (FZK viol 5->4, undet 0->1); target NEVER compliant.",
+    "prefix_defect_expected": "pre-fix AND C1-B both return 250000 (positive) -> target compliant -> FZK 4 (false pass C1-B does not catch)."
+  },
   "c2_no_unit.ifc": {
     "pathology": "LENGTHUNIT removed from IfcProject.UnitsInContext",
     "expected": "not_certifiable",

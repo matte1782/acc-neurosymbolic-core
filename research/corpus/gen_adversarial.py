@@ -114,6 +114,29 @@ def main() -> int:
             "spec_rationale": "zero area is not a valid window; space stays a violation; FZK 5.",
             "prefix_defect_expected": "none (0 is falsy; pre-fix also fell through) — no-crash control",
         }
+        # c1_absurd_pos_window (C-1b GATE-S, the REACHABLE false-pass): set the target's first serving
+        # window to a huge POSITIVE 500x500 -> 250000 m2. C1-B (positivity) PASSES it (positive +
+        # finite), so the fabricated area flips the target (a frozen FZK violation) to COMPLIANT
+        # (FZK 5->4). Spec truth: 250000 m2 on a 74.5 m2 floor is non-physical -> untrustworthy ->
+        # aero unbounded -> the space is undetermined (FZK viol=4, undet=1); the target NEVER compliant.
+        m9 = ifcopenshell.open(_FZK)
+        sp9 = next(s for s in m9.by_type("IfcSpace") if s.GlobalId == gid)
+        w9 = _serving_windows(m9, sp9)[0]
+        w9.OverallHeight = 500.0
+        w9.OverallWidth = 500.0
+        p9 = os.path.join(_OUT, "c1_absurd_pos_window.ifc")
+        m9.write(p9)
+        expected["c1_absurd_pos_window.ifc"] = {
+            "pathology": "serving window OverallHeight/Width set to 500/500 (250000 m2, >> 74.5 floor)",
+            "target_gid": gid,
+            "expected_total_violations": 4,
+            "target_must_not_be_compliant": True,
+            "spec_rationale": "a 250000 m2 window on a 74.5 m2 floor is non-physical -> untrustworthy "
+                              "-> aero unbounded -> space undetermined (FZK viol 5->4, undet 0->1); "
+                              "target NEVER compliant.",
+            "prefix_defect_expected": "pre-fix AND C1-B both return 250000 (positive) -> target "
+                                      "compliant -> FZK 4 (false pass C1-B does not catch).",
+        }
         # NOTE: NaN/inf window dims are UNREPRESENTABLE in a written IFC — ifcopenshell raises
         # "Only finite values are allowed" on setArgumentAsDouble. So the IFC-FILE attack surface for
         # OverallHeight/Width is limited to finite negative/zero; NaN/inf can only arise from

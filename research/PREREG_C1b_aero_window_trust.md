@@ -101,3 +101,28 @@ A candidate dies if it (a) lets `c1_absurd_pos_window` pass (GATE-S), (b) flips 
 (d) reports a definite verdict where the aero ratio is genuinely unbounded (ADR-003 violation). The
 nulls F-A/L-0 are expected to fail; if the corpus cannot demonstrate that, it is inadequate and must
 be strengthened before judging.
+
+---
+
+## ADDENDUM (post-freeze grounding corrections — does NOT alter the frozen rows above)
+Two assumptions were corrected by direct measurement during corpus construction (probe 2026-06-29).
+Recorded in the open (freeze discipline: append, never edit a frozen row); none change the gates,
+weights, or decision rule.
+1. **`c1_neg_window` is NOT a laundering demonstrator and is NOT undetermined.** FZK windows carry a
+   valid Qto Area (0.785 m²), so a negative `OverallHeight/Width` falls through `window_area` to the
+   **Qto path** and stays measurable (verified: neg attr → 0.785). The target stays a **violation**
+   (FZK viol=5); the §4 "re-pin to undetermined" note is **withdrawn**. Consequence: the laundering
+   bug (`windows_serving` None→0.0) is **LATENT/unreachable on the 3 fixtures** (a measurable space
+   always has a Qto fallback; the only no-Qto file, Duplex, is already undetermined) and can only
+   *lower* the numerator → it causes false-**fails**/honesty gaps, never a false-**pass**. ⇒
+   Laundering is demoted from GATE-S to a **latent honesty fix** (ADR-003), covered by a
+   function-level test (a None among measurable serving windows → aero undetermined), with an
+   end-to-end no-attr-no-Qto fixture recorded as a gap.
+2. **The attr↔Qto cross-check (F-D) IS viable — with a tolerance band.** Real FZK windows agree
+   within ~21% (`attr 1.0` vs `Qto 0.785`, inside a 2× band) while the absurd case is `250000` vs
+   `0.785` (far outside). A band-based F-D trusts real windows yet flags the absurd one; its only real
+   weakness is Duplex (0/24 carry Qto) → it needs a plausibility fallback. F-D is a live contender.
+3. **The reachable GATE-S residual is C1-F absurd-POSITIVE** (`500×500 → 250000`, passes C1-B). The
+   single GATE-S fixture is `c1_absurd_pos_window` (target window → 500×500): the target
+   (`2dQFggKBb1fOc1CqZDIDlx`, a frozen FZK violation) flips **compliant** under HEAD (false pass, FZK
+   5→4); a correct fix makes it **undetermined** (FZK viol=4, undet=1; target never compliant).
