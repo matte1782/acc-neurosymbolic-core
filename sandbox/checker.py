@@ -571,32 +571,76 @@ def materialize_ifcspaces(model, scale: float):
     return store
 
 
-def _has_length_unit(model) -> bool:
-    """True iff the model declares an explicit project LENGTHUNIT (IfcSIUnit or
-    IfcConversionBasedUnit with UnitType=='LENGTHUNIT') in IfcProject.UnitsInContext."""
-    for proj in model.by_type("IfcProject"):
-        uic = getattr(proj, "UnitsInContext", None)
-        if uic is None:
-            continue
-        for unit in (getattr(uic, "Units", None) or []):
-            if getattr(unit, "UnitType", None) == "LENGTHUNIT":
-                return True
+class NotCertifiableError(ValueError):
+    """The model cannot be measured as-is (e.g. no resolvable project length unit) — a REFUSAL, not a
+    verdict. Surfaced as a classified non-zero exit, never a silent pass. Subclasses ValueError so
+    existing fail-closed `except ValueError` / `except Exception` call sites still catch it."""
+
+
+def _length_unit_entity(model):
+    """The project LENGTHUNIT entity, read from projects[0] — the SAME project
+    ifcopenshell.calculate_unit_scale uses — so the resolvability verdict and the scale agree. (Closes
+    the multi-project divergence the audit flagged: a guard scanning ALL projects could pass while the
+    scale is taken from projects[0].) Returns None if absent."""
+    projs = model.by_type("IfcProject")
+    if not projs:
+        return None
+    uic = getattr(projs[0], "UnitsInContext", None)
+    if uic is None:
+        return None
+    for unit in (getattr(uic, "Units", None) or []):
+        if getattr(unit, "UnitType", None) == "LENGTHUNIT":
+            return unit
+    return None
+
+
+def _conversion_chains_to_si(unit, _depth: int = 0) -> bool:
+    """An IfcConversionBasedUnit (foot/inch/…) resolves iff its ConversionFactor's UnitComponent
+    chains to an SI METRE (directly or via nested conversion units). Bounded recursion guards a
+    cyclic/pathological file."""
+    if _depth > 8:
+        return False
+    cf = getattr(unit, "ConversionFactor", None)              # IfcMeasureWithUnit
+    comp = getattr(cf, "UnitComponent", None) if cf is not None else None
+    if comp is None:
+        return False
+    if comp.is_a("IfcSIUnit"):
+        return comp.Name == "METRE"
+    if comp.is_a("IfcConversionBasedUnit"):
+        return _conversion_chains_to_si(comp, _depth + 1)
     return False
 
 
-def length_scale_to_m(model) -> float:
-    """Resolve the project length-unit scale to metres, FAIL-CLOSED (P0 audit, C-2).
+def _length_unit_resolvable(unit) -> bool:
+    """A LENGTHUNIT resolves to a defined metre scale iff it is an IfcSIUnit (METRE, any prefix) or an
+    IfcConversionBasedUnit whose conversion chains to SI metre. An IfcContextDependentUnit (a custom
+    unit with NO defined SI relationship, e.g. 'SMOOT') or any other kind is UNRESOLVABLE — for those
+    calculate_unit_scale silently falls back to 1.0, the exact 1000x misread C-2 must refuse.
+    PRESENCE alone is insufficient (the original C2-B defect, research/DECISION_MATRIX.md C-2);
+    RESOLVABILITY is the real contract."""
+    if unit is None:
+        return False
+    if unit.is_a("IfcSIUnit"):
+        return unit.Name == "METRE"
+    if unit.is_a("IfcConversionBasedUnit"):
+        return _conversion_chains_to_si(unit)
+    return False                                              # IfcContextDependentUnit / other
 
-    ifcopenshell.util.unit.calculate_unit_scale() silently returns 1.0 when there is no IfcProject /
-    no UnitsInContext / no LENGTHUNIT entry — which would read a millimetre-authored model as metres
-    (a 1000x under-read: a 2500 mm room becomes 2500 m and trivially clears the 2.70 m bar -> a
-    silent false pass). Refuse to guess: require an explicit LENGTHUNIT, else RAISE (the model is not
-    certifiable). A model genuinely authored in metres still carries a METRE LENGTHUNIT and resolves
-    to 1.0 normally — only the absent-unit case raises."""
-    if not _has_length_unit(model):
-        raise ValueError(
-            "no project LENGTHUNIT resolved — refusing to assume metres (an absent unit would "
-            "silently 1000x-misread a millimetre model); model is not certifiable")
+
+def length_scale_to_m(model) -> float:
+    """Resolve the project length-unit scale to metres, FAIL-CLOSED (P0 audit C-2; hardened to C2-F
+    per research/DECISION_MATRIX.md after the bias-resistant pilot disqualified the presence-only
+    check). calculate_unit_scale() returns 1.0 not only for a real metre model but ALSO when the unit
+    is ABSENT or PRESENT-BUT-UNRESOLVABLE (an IfcContextDependentUnit / unsupported kind) — both a
+    silent 1000x-misread risk. Require the project LENGTHUNIT to RESOLVE (SI metre at any prefix, or a
+    conversion unit chaining to SI), else RAISE NotCertifiableError. A genuine metre/mm/foot model
+    resolves normally; only the absent/unresolvable cases refuse."""
+    unit = _length_unit_entity(model)
+    if not _length_unit_resolvable(unit):
+        kind = "absent" if unit is None else f"present-but-unresolvable ({unit.is_a()})"
+        raise NotCertifiableError(
+            f"project LENGTHUNIT is {kind} — cannot resolve a metre scale; refusing to assume metres "
+            "(an absent/unresolvable unit silently 1000x-misreads a non-metre model). Not certifiable.")
     return uu.calculate_unit_scale(model)
 
 
@@ -650,7 +694,14 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     thr = Thresholds.from_rules_json(args.rules) if args.rules else Thresholds()
-    report = run(args.ifc, args.salva_casa, thr)
+    try:
+        report = run(args.ifc, args.salva_casa, thr)
+    except NotCertifiableError as e:
+        # C2-C (research/DECISION_MATRIX.md): a refusal is a CLASSIFIED non-zero exit (2) with a
+        # clear message — NOT a raw traceback exiting 1, which a caller cannot distinguish from a
+        # normal violations run. 0=compliant, 1=violations/undetermined/no-space, 2=not-measurable.
+        print(f"NOT CERTIFIABLE: {e}")
+        return 2
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=2, ensure_ascii=False)

@@ -168,6 +168,52 @@ def main() -> int:
         "prefix_defect_expected": "n/a (control): both pre-fix and fix process it.",
     }
 
+    # c2_contextdependent_unit (GATE-S, present-but-UNRESOLVABLE): replace the SI metre with an
+    # IfcContextDependentUnit (a custom 'SMOOT', UnitType=LENGTHUNIT) — schema-valid but with NO
+    # defined SI relationship, so calculate_unit_scale silently falls back to 1.0. Spec truth:
+    # unresolvable -> not-certifiable. This is the class the bias-resistant pilot used to DISQUALIFY
+    # the presence-only C2-B (research/DECISION_MATRIX.md C-2).
+    m7 = ifcopenshell.open(_FZK)
+    _, uic7, _ = _length_unit(m7)
+    if uic7 is not None:
+        dims7 = m7.create_entity("IfcDimensionalExponents", 1, 0, 0, 0, 0, 0, 0)
+        cdu = m7.create_entity("IfcContextDependentUnit", Dimensions=dims7, UnitType="LENGTHUNIT",
+                               Name="SMOOT")
+        uic7.Units = [u for u in uic7.Units if getattr(u, "UnitType", None) != "LENGTHUNIT"] + [cdu]
+    p7 = os.path.join(_OUT, "c2_contextdependent_unit.ifc")
+    m7.write(p7)
+    expected["c2_contextdependent_unit.ifc"] = {
+        "pathology": "SI metre replaced by IfcContextDependentUnit (custom 'SMOOT', LENGTHUNIT)",
+        "expected": "not_certifiable",
+        "spec_rationale": "an IfcContextDependentUnit has no defined SI relationship -> scale "
+                          "unresolvable -> calculate_unit_scale silently returns 1.0 -> must REFUSE.",
+        "prefix_defect_expected": "pre-fix AND the presence-only C2-B BOTH proceed at scale 1.0 "
+                                  "(the hole that disqualified C2-B; C2-F resolvability check refuses).",
+    }
+    # c2_foot (GATE-N over-reject control for CONVERSION units): replace the SI metre with an
+    # IfcConversionBasedUnit 'foot' whose ConversionFactor chains to SI metre (0.3048). Spec truth:
+    # resolvable -> PROCESSES at scale 0.3048; the C2-F check must NOT refuse a declared conversion unit.
+    m8 = ifcopenshell.open(_FZK)
+    _, uic8, _ = _length_unit(m8)
+    if uic8 is not None:
+        si_m = m8.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+        dims8 = m8.create_entity("IfcDimensionalExponents", 1, 0, 0, 0, 0, 0, 0)
+        mwu = m8.create_entity("IfcMeasureWithUnit",
+                               ValueComponent=m8.create_entity("IfcLengthMeasure", 0.3048),
+                               UnitComponent=si_m)
+        foot = m8.create_entity("IfcConversionBasedUnit", Dimensions=dims8, UnitType="LENGTHUNIT",
+                                Name="foot", ConversionFactor=mwu)
+        uic8.Units = [u for u in uic8.Units if getattr(u, "UnitType", None) != "LENGTHUNIT"] + [foot]
+    p8 = os.path.join(_OUT, "c2_foot.ifc")
+    m8.write(p8)
+    expected["c2_foot.ifc"] = {
+        "pathology": "SI metre replaced by IfcConversionBasedUnit 'foot' (ConversionFactor 0.3048->SI)",
+        "expected": "processes",
+        "spec_rationale": "a conversion unit chaining to SI is resolvable (scale 0.3048) -> the "
+                          "checker must PROCESS it, not refuse (GATE-N over-reject guard).",
+        "prefix_defect_expected": "n/a (control): both process; the C2-F fix must keep processing it.",
+    }
+
     with open(os.path.join(os.path.dirname(_OUT), "expected_verdicts.json"), "w",
               encoding="utf-8") as fh:
         json.dump(expected, fh, indent=2, ensure_ascii=False)

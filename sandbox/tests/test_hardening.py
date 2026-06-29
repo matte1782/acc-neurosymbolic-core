@@ -108,10 +108,20 @@ def test_quantity_positivity() -> None:
         C.ue.get_psets = saved
 
 
-# ------------------------------------------------------- C-2: length unit fail-closed
-class _U:
-    def __init__(self, t):
-        self.UnitType = t
+# ----------------------------------- C-2: length unit RESOLVABILITY fail-closed (C2-F, hardened)
+# Presence is NOT enough (the C2-B defect the bias-resistant pilot disqualified): a present-but-
+# unresolvable unit (IfcContextDependentUnit) still let calculate_unit_scale fall back to 1.0.
+class _FakeUnit:
+    def __init__(self, klass, unit_type="LENGTHUNIT", name=None, conv=None):
+        self._klass, self.UnitType, self.Name, self.ConversionFactor = klass, unit_type, name, conv
+
+    def is_a(self, k=None):
+        return self._klass if k is None else (k == self._klass)
+
+
+class _MWU:
+    def __init__(self, comp):
+        self.UnitComponent = comp
 
 
 class _UIC:
@@ -133,15 +143,27 @@ class _Model:
 
 
 def test_length_unit_fail_closed() -> None:
-    with_len = _Model([_Proj(_UIC([_U("AREAUNIT"), _U("LENGTHUNIT")]))])
-    without = _Model([_Proj(_UIC([_U("AREAUNIT"), _U("TIMEUNIT")]))])
-    no_proj = _Model([])
-    _check("has_length_unit_true", C._has_length_unit(with_len) is True)
-    _check("has_length_unit_false", C._has_length_unit(without) is False)
-    _check("no_project_false", C._has_length_unit(no_proj) is False)
-    # the C-2 fix: no LENGTHUNIT -> RAISE (refuse the silent 1.0), not a guessed scale.
-    _check("missing_length_unit_raises", _raises(lambda: C.length_scale_to_m(without), ValueError))
-    _check("no_project_raises", _raises(lambda: C.length_scale_to_m(no_proj), ValueError))
+    si_m = _FakeUnit("IfcSIUnit", name="METRE")
+    ctx = _FakeUnit("IfcContextDependentUnit", name="SMOOT")          # present but UNRESOLVABLE
+    foot = _FakeUnit("IfcConversionBasedUnit", name="foot",
+                     conv=_MWU(_FakeUnit("IfcSIUnit", name="METRE")))
+    area = _FakeUnit("IfcSIUnit", unit_type="AREAUNIT", name="SQUARE_METRE")
+    # resolvability predicate (the C2-F contract): presence is NOT enough.
+    _check("resolvable_si_metre", C._length_unit_resolvable(si_m) is True)
+    _check("resolvable_conversion_foot", C._length_unit_resolvable(foot) is True)
+    _check("unresolvable_contextdependent", C._length_unit_resolvable(ctx) is False)
+    _check("unresolvable_none", C._length_unit_resolvable(None) is False)
+    # entity lookup uses projects[0] (matches calculate_unit_scale -> closes multi-project divergence).
+    _check("entity_found", C._length_unit_entity(_Model([_Proj(_UIC([area, si_m]))])) is si_m)
+    _check("entity_absent_none", C._length_unit_entity(_Model([_Proj(_UIC([area]))])) is None)
+    # the C2-F fix: a present-but-UNRESOLVABLE unit RAISES NotCertifiableError (the C2-B hole),
+    # as does an absent unit / no project.
+    _check("contextdependent_raises", _raises(
+        lambda: C.length_scale_to_m(_Model([_Proj(_UIC([area, ctx]))])), C.NotCertifiableError))
+    _check("absent_unit_raises", _raises(
+        lambda: C.length_scale_to_m(_Model([_Proj(_UIC([area]))])), C.NotCertifiableError))
+    _check("no_project_raises", _raises(lambda: C.length_scale_to_m(_Model([])), C.NotCertifiableError))
+    _check("not_certifiable_is_valueerror", issubclass(C.NotCertifiableError, ValueError))
     # a real fixture (declares METRE) must resolve normally (scale 1.0), not raise.
     try:
         import ifcopenshell
@@ -172,11 +194,37 @@ def test_zero_space_not_certifiable() -> None:
     _check("zero_space_exits_nonzero", rc != 0)
 
 
+def test_c2_classified_exit() -> None:
+    # C2-C: a not-certifiable model exits with the DISTINCT code 2 + a message, not a raw traceback
+    # exiting 1 (indistinguishable from a violations run).
+    import os
+    import tempfile
+    try:
+        import ifcopenshell
+    except Exception:  # noqa: BLE001
+        _skip("c2_classified_exit_code_2", "ifcopenshell absent")
+        return
+    fx = _SANDBOX / "data" / "AC20-FZK-Haus.ifc"
+    if not fx.exists():
+        _skip("c2_classified_exit_code_2", "fixture absent")
+        return
+    m = ifcopenshell.open(str(fx))
+    for proj in m.by_type("IfcProject"):
+        uic = getattr(proj, "UnitsInContext", None)
+        if uic is not None:
+            uic.Units = [u for u in uic.Units if getattr(u, "UnitType", None) != "LENGTHUNIT"]
+    p = os.path.join(tempfile.mkdtemp(), "nounit.ifc")
+    m.write(p)
+    rc = C.main([p])
+    _check("c2_classified_exit_code_2", rc == 2)
+
+
 def main() -> int:
     test_window_area_positivity()
     test_quantity_positivity()
     test_length_unit_fail_closed()
     test_zero_space_not_certifiable()
+    test_c2_classified_exit()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 
