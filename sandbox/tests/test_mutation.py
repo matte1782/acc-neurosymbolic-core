@@ -112,10 +112,52 @@ def test_h1_mutant_killed() -> None:
     _check("H1_head_exits_nonzero_on_zero_space", rc != 0)
 
 
+def test_c1b_mutant_killed() -> None:
+    # C-1b mutant: the old "sum every window_area (incl. an absurd one) with no upper bound" numerator
+    # false-passes the aero check; HEAD (F-C + L-2) routes the target to undetermined instead.
+    import os
+    import tempfile
+    try:
+        import ifcopenshell
+    except Exception:  # noqa: BLE001
+        _skip("C1b_mutant_killed", "ifcopenshell absent")
+        return
+    if not _FZK.exists():
+        _skip("C1b_mutant_killed", "fixture absent")
+        return
+    m = ifcopenshell.open(str(_FZK))
+    scale = C.length_scale_to_m(m)
+    # find a habitable aero-violation space with a serving window
+    gid = None
+    for s in m.by_type("IfcSpace"):
+        f = C.check_space(s, scale, False, C.Thresholds())
+        sw = C.serving_windows(s)
+        if f.compliant is False and f.occupancy != "accessory" and f.height_ok and not f.aero_ok and sw:
+            gid = s.GlobalId
+            break
+    if gid is None:
+        _skip("C1b_mutant_killed", "no aero-violation space w/ window")
+        return
+    sp = next(s for s in m.by_type("IfcSpace") if s.GlobalId == gid)
+    wins = C.serving_windows(sp)
+    wins[0].OverallHeight, wins[0].OverallWidth = 500.0, 500.0   # 250000 m2
+    floor = C.space_floor_area(sp, scale)
+    # mutant (no upper bound + laundering): numerator includes the absurd 250000 -> ratio passes.
+    mutant_num = sum(C.window_area(w, scale) or 0.0 for w in wins)
+    _check("C1b_mutant_old_numerator_false_pass",
+           (mutant_num / floor) + 1e-9 >= 0.125 and mutant_num > floor)
+    # HEAD kills it: the target is undetermined (not compliant).
+    p = os.path.join(tempfile.mkdtemp(), "absurd.ifc")
+    m.write(p)
+    tgt = next(f for f in C.run(p)["findings"] if f["global_id"] == gid)
+    _check("C1b_head_undetermined", tgt["compliant"] is None)
+
+
 def main() -> int:
     test_c1_mutant_killed()
     test_c2_mutant_killed()
     test_h1_mutant_killed()
+    test_c1b_mutant_killed()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

@@ -77,8 +77,13 @@ def _judge(name, exp, prefix_res, fix_res):
         def ok(res):
             if res["outcome"] != "ran":
                 return False
-            tgt_ok = (res["compliant_by_gid"].get(gid) is not True) if exp.get(
-                "target_must_not_be_compliant") else True
+            tgt = res["compliant_by_gid"].get(gid)
+            tgt_ok = (tgt is not True) if exp.get("target_must_not_be_compliant") else True
+            # instrument fix (DECISION_MATRIX C-1b): a fix that DROPS the target from the report could
+            # pass "not compliant" + viol==want_v with undet=0. Pin the target as specifically
+            # undetermined (compliant is None) when the spec expects undetermined.
+            if exp.get("target_expected_undetermined"):
+                tgt_ok = tgt_ok and (tgt is None)
             return res["violations"] == want_v and tgt_ok
         fix_ok = ok(fix_res)
         prefix_ok = ok(prefix_res)

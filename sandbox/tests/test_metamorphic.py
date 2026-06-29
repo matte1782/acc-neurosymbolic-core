@@ -134,10 +134,33 @@ def test_mr3_declared_mm_still_processes() -> None:
     _check("MR3_declared_mm_processes", ran)
 
 
+def test_mr4_absurd_window_undetermined() -> None:
+    # C-1b: an absurd-but-positive serving window (area >> floor) is non-physical -> the aero ratio
+    # cannot be bounded -> the space is UNDETERMINED, never compliant (fabricated area cannot
+    # manufacture a pass). Oracle-free metamorphic relation.
+    ifc = _ifc()
+    if ifc is None or not _FZK.exists():
+        _skip("MR4_absurd_window_undetermined", "ifcopenshell/fixture absent")
+        return
+    gid = _aero_violation_space(ifc, _FZK)
+    if gid is None:
+        _skip("MR4_absurd_window_undetermined", "no aero-violation space w/ window")
+        return
+    m = ifc.open(str(_FZK))
+    sp = next(s for s in m.by_type("IfcSpace") if s.GlobalId == gid)
+    w = _serving_windows(sp)[0]
+    w.OverallHeight, w.OverallWidth = 500.0, 500.0   # 250000 m2 >> floor -> untrustworthy
+    rep = _run_tmp(ifc, m)
+    tgt = next(f for f in rep["findings"] if f["global_id"] == gid)
+    _check("MR4_absurd_window_undetermined", tgt["compliant"] is None)
+    _check("MR4_absurd_window_not_compliant", tgt["compliant"] is not True)
+
+
 def main() -> int:
     test_mr1_invalid_geometry_cannot_help()
     test_mr2_no_unit_becomes_refusal()
     test_mr3_declared_mm_still_processes()
+    test_mr4_absurd_window_undetermined()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

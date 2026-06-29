@@ -131,9 +131,10 @@ def main() -> int:
             "target_gid": gid,
             "expected_total_violations": 4,
             "target_must_not_be_compliant": True,
+            "target_expected_undetermined": True,
             "spec_rationale": "a 250000 m2 window on a 74.5 m2 floor is non-physical -> untrustworthy "
                               "-> aero unbounded -> space undetermined (FZK viol 5->4, undet 0->1); "
-                              "target NEVER compliant.",
+                              "target NEVER compliant (and specifically undetermined, not dropped).",
             "prefix_defect_expected": "pre-fix AND C1-B both return 250000 (positive) -> target "
                                       "compliant -> FZK 4 (false pass C1-B does not catch).",
         }

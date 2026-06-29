@@ -314,24 +314,34 @@ def space_floor_area(space, scale: float) -> Optional[float]:
     return None
 
 
-def window_area(win, scale: float) -> Optional[float]:
-    # Prefer the direct OverallHeight x OverallWidth attributes: vendor-independent and
-    # populated 100% across all tested models, whereas Qto_WindowBaseQuantities is often absent.
-    # POSITIVITY + TYPE GUARD (P0 audit, C-1/M-3): the old `if h and w` admitted negatives (truthy),
-    # so two negative IfcLengthMeasure dims fabricated a POSITIVE area -> a habitable space could
-    # false-pass its 1/8 aero check on garbage geometry; and the bare float() crashed the whole
-    # report on a non-numeric vendor dim. Require BOTH dims present, numeric, finite, and > 0
-    # (checking each dim, not just the product, so -h * -w cannot sneak through); otherwise fall
-    # through to the positivity-guarded Qto reading, else None (undetermined). Never a fabricated area.
+def _window_area_bounds(win, scale: float):
+    """Both positivity-guarded window-area sources as a tuple ``(attr, qto)``, each None if invalid or
+    absent. ``attr`` = OverallHeight×OverallWidth (a bounding box); ``qto`` =
+    Qto_WindowBaseQuantities.Area (net glazing). POSITIVITY + TYPE GUARD (P0 audit, C-1/M-3): the old
+    ``if h and w`` admitted negatives (truthy), so two negative dims fabricated a POSITIVE area; and
+    the bare float() crashed on a non-numeric dim. Require BOTH dims present, numeric, finite, and > 0
+    (each dim, so −h·−w cannot sneak a positive product through); ``_qty`` already guards ``qto``.
+    ``window_area`` prefers ``attr``; the C-1b aero lower bound uses ``min(attr, qto)`` so a 'pass' is
+    a true lower bound (research/DECISION_MATRIX.md, F-C + L-2)."""
     h, w = getattr(win, "OverallHeight", None), getattr(win, "OverallWidth", None)
+    attr = None
     if h is not None and w is not None:
         try:
             hf, wf = float(h), float(w)
         except (TypeError, ValueError):
             hf = wf = None
         if hf is not None and math.isfinite(hf) and math.isfinite(wf) and hf > 0 and wf > 0:
-            return hf * wf * (scale ** 2)
-    return _qty(win, scale, _WINDOW_QTO, "Area", power=2)
+            attr = hf * wf * (scale ** 2)
+    return attr, _qty(win, scale, _WINDOW_QTO, "Area", power=2)
+
+
+def window_area(win, scale: float) -> Optional[float]:
+    # Attr-preferring single window area (vendor-independent OverallHeight×OverallWidth, populated
+    # across all tested models; Qto fallback when the attributes are absent). Positivity per C1-B
+    # lives in _window_area_bounds. Returns None if neither source is valid -> the caller treats the
+    # window as unmeasurable (never a fabricated / laundered area).
+    attr, qto = _window_area_bounds(win, scale)
+    return attr if attr is not None else qto
 
 
 # --- Declarative applicability/selection table (Stage 4 Part 2) ------------------------
@@ -429,18 +439,15 @@ def classify(space) -> str:
     return graph.occupancy_via_graph(space.Name, space.LongName)
 
 
-def windows_serving(space, scale: float) -> float:
-    """Sum window areas via IfcRelSpaceBoundary (``space.BoundedBy``). Returns 0.0 if none.
+def serving_windows(space):
+    """The IfcWindow elements bounding a space via IfcRelSpaceBoundary (``space.BoundedBy``).
 
-    TODO: fallback when a model lacks space boundaries — associate windows by storey
-    containment / exterior-wall hosting. Many architectural exports omit IfcRelSpaceBoundary.
-    """
-    total = 0.0
-    for rel in (space.BoundedBy or []):
-        elem = getattr(rel, "RelatedBuildingElement", None)
-        if elem is not None and elem.is_a("IfcWindow"):
-            total += window_area(elem, scale) or 0.0
-    return total
+    TODO (audit M-8): fallback when a model omits IfcRelSpaceBoundary — associate windows by storey
+    containment / exterior-wall hosting. Until then a space with no resolvable boundaries serves no
+    windows (and, for a habitable room, an aero ratio that may be understated)."""
+    return [getattr(rel, "RelatedBuildingElement", None) for rel in (space.BoundedBy or [])
+            if getattr(rel, "RelatedBuildingElement", None) is not None
+            and getattr(rel, "RelatedBuildingElement").is_a("IfcWindow")]
 
 
 def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> SpaceFinding:
@@ -448,7 +455,15 @@ def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> Spa
     occ = classify(space)
     h = space_height(space, scale)
     area = space_floor_area(space, scale)
-    win = windows_serving(space, scale)
+    # Per serving window: pref = attr-preferring area (== window_area); cons = conservative
+    # min(attr, Qto) lower bound. pref is None when the window is unmeasurable (no valid source).
+    wdata = []
+    for w in serving_windows(space):
+        attr, qto = _window_area_bounds(w, scale)
+        pref = attr if attr is not None else qto
+        cons = min([v for v in (attr, qto) if v is not None], default=None)
+        wdata.append((pref, cons))
+    win_display = sum(pref for pref, _ in wdata if pref is not None)   # measurable sum (display)
 
     # Applicability is table-driven (rules/applicability.json), not a hardcoded if: accessory uses
     # its own entry; habitable AND unknown (the strict complement) use the habitable entry, so
@@ -466,8 +481,8 @@ def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> Spa
         occupancy=occ,
         height_m=round(h, 3) if h is not None else None,
         floor_area_m2=round(area, 3) if area is not None else None,
-        window_area_m2=round(win, 3),
-        aero_ratio=round(win / area, 4) if area else None,
+        window_area_m2=round(win_display, 3),
+        aero_ratio=round(win_display / area, 4) if area else None,
         height_required_m=required,
         height_ok=None,
         aero_ok=None,
@@ -480,13 +495,39 @@ def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> Spa
 
     # The 1/8 aero-illuminating ratio (DM 1975 art. 5) applies to habitable rooms; accessory
     # spaces (bagni, ripostigli, corridoi) follow separate ventilation rules — skip R2 there.
-    # Whether R2 applies is now read from the table (accessory → aero_applies=False), not hardcoded.
     if not aero_applies:
         finding.notes.append("aero ratio N/A for accessory room (separate ventilation rules)")
     elif area:
-        finding.aero_ok = (win / area) + 1e-9 >= thr.aero_illuminating_ratio
-        if win == 0.0:
-            finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
+        # C-1b trustworthy-window aero semantics (F-C plausibility + L-2 lower bound; ADR-003,
+        # research/DECISION_MATRIX.md). A serving window is UNTRUSTWORTHY if it is unmeasurable (None)
+        # or its area exceeds the floor it serves (ratio > 1 is non-physical for openable glazing —
+        # no magic constant; the room's own floor is the scale). An untrustworthy window's area is
+        # NEVER laundered to 0.0 (the old `or 0.0` bug).
+        untrust_present = any(pref is None or pref > area for pref, _ in wdata)
+        trust = [(pref, cons) for pref, cons in wdata if pref is not None and pref <= area]
+        win_trust = sum(pref for pref, _ in trust)
+        finding.window_area_m2 = round(win_trust, 3)
+        finding.aero_ratio = round(win_trust / area, 4)
+        if not untrust_present:
+            # all serving windows trustworthy -> the ordinary 1/8 check (byte-identical to before).
+            finding.aero_ok = (win_trust / area) + 1e-9 >= thr.aero_illuminating_ratio
+            if win_trust == 0.0:
+                finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
+        else:
+            # L-2: an untrustworthy window is present. PASS only if the trustworthy windows ALONE,
+            # measured by their CONSERVATIVE lower bound min(attr, Qto), already clear 1/8 (so the
+            # pass is a true lower bound); otherwise the ratio cannot be bounded -> UNDETERMINED,
+            # never a laundered pass or a guessed fail. SpaceFinding.compliant turns aero_ok=None into
+            # compliant=None (the keystone — left untouched).
+            cons_trust = sum(cons for _, cons in trust)
+            if (cons_trust / area) + 1e-9 >= thr.aero_illuminating_ratio:
+                finding.aero_ok = True
+                finding.notes.append("aero passes on trustworthy windows alone (conservative lower "
+                                     "bound); untrustworthy window area ignored")
+            else:
+                finding.aero_ok = None
+                finding.notes.append("untrustworthy serving-window area (unmeasurable or larger than "
+                                     "the floor) — aero ratio cannot be bounded; undetermined (ADR-003)")
     else:
         finding.notes.append("no NetFloorArea — cannot evaluate aero ratio")
 

@@ -253,3 +253,243 @@ C2-C classified-exit increment so the refusal is a clean signal, not a raw trace
 - **The frozen corpus is incomplete against its own §4 minimum set** (no Qto-negative, NaN/inf,
   present-but-unsupported, or conversion-unit fixtures); several disqualifiers are refuter-built rather
   than corpus-pinned and should be added before the next cycle.
+
+---
+
+## C-1b — trustworthy-window aero semantics (absurd area + windows_serving laundering)
+
+*Date: 2026-06-30.*
+*Method: frozen prereg (`research/PREREG_C1b_aero_window_trust.md`, incl. the post-freeze ADDENDUM)
+→ independent blind analysts (judge / refuter) → adversarial refutation → judge under the frozen
+decision rule (§6). Ground truth is EXTERNAL = IFC schema + DM-1975 art.5 statute + the pinned
+adversarial corpus (`research/corpus/expected_verdicts.json`) — **NEVER** the circular control oracle
+(FZK 5/1 etc., which are outputs of the current code and so cannot see either residual; PREREG §0).
+The shipped status quo is the **NULL** (F-A no upper bound; L-0 `windows_serving … or 0.0` laundering)
+and is the documented defect, not a baseline of correctness.*
+
+All load-bearing numbers below were **re-run and independently reproduced** by the synthesizer from
+`cd "…/acc-neurosymbolic-core"` on 2026-06-30: `python research/corpus/gen_adversarial.py` (8
+fixtures) + `python research/corpus/eval_corpus.py`, plus targeted reads of `sandbox/checker.py`
+(`window_area` :317-334, `windows_serving` :432-443 incl. the `or 0.0` at :442, `check_space` aero
+branch :484-491, `SpaceFinding.compliant` keystone :247-259) and `research/corpus/eval_corpus.py`
+`ok()` :77-82. Citations are `file:line` or measured output.
+
+**Issue.** Two coupled aero residuals the circular oracle is blind to. (1) **C1-F absurd-POSITIVE
+area:** `window_area` (`checker.py:317-334`) has **no upper bound** — both dims present, finite, `>0`
+clears the C1-B positivity guard (:332), so a `500×500` window → `250000 m²` inflates the aero
+numerator and flips the FZK target `2dQFggKBb1fOc1CqZDIDlx` (floor 74.509 m², 2×1.0 m² windows,
+true aero 0.0268 < 0.125) to **compliant** (FZK 5→4) — a reachable false pass. (2) **`windows_serving`
+laundering:** `total += window_area(elem, scale) or 0.0` (`checker.py:442`) coerces an unmeasurable
+serving window to a *measured* 0.0 and emits a definite verdict, violating ADR-003. Per the prereg
+ADDENDUM (measured): a negative attr falls back to a valid Qto (FZK neg attr → 0.785), so on the 3
+fixtures the laundering is **LATENT** (false-fail/honesty, never a false-pass) — demoted from GATE-S
+to an ADR-003 honesty fix.
+
+### Method note — frozen rubric (no goalpost-moving)
+Gates (disqualifying): **GATE-S** 0 false-pass (`c1_absurd_pos_window` target must never read
+compliant), **GATE-N** conformant fixtures + frozen controls byte-identical and no over-rejection
+from the legitimate ~21% attr/Qto gap or Duplex's Qto-less windows, **GATE-X** no unintended crash
+(a classified `undetermined` is the intended signal). Weights (0–5 among survivors):
+coverage/safety-margin **.30**, correctness/no-new-false-fail **.25**, spec-faithfulness (physics +
+ADR-003 honesty) **.15**, simplicity/maintainability **.15**, operability (clear "why undetermined")
+**.10**, performance **.05**. Decision rule (§6): drop gate-failers; pick max weighted; **no
+stability clause** (the nulls F-A/L-0 are the disqualified status quo). The two sub-decisions
+(upper-bound detection F-* × aero-semantics L-*) are chosen together as one coherent fix.
+
+### Upper-bound detection (C1-F) — F-* candidates
+
+| Candidate | GATE-S | GATE-N | GATE-X | Weighted total | Verdict |
+|---|---|---|---|---|---|
+| **F-A** (null / no upper bound) | **FAIL** | n/a | n/a | 1.175 (dropped) | **DISQUALIFIED** — the documented defect; 250000 m² passes C1-B, target flips compliant (FZK 5→4) |
+| **F-B** (absolute per-window cap, magic constant) | PASS | PASS | PASS | 2.700 | survivor, loses (sub-cap absurd window escapes; constant doesn't scale to the room) |
+| **F-C** (relative-to-floor plausibility: win/floor > 1 ⇒ untrustworthy) | PASS | PASS | PASS | **4.675** | **WINNER (F axis)** — room's own scale, no constant, needs no attr/Qto, works on Duplex with no fallback |
+| **F-D** (attr↔Qto tolerance band + Duplex plausibility fallback) | PASS | PASS | PASS | 4.000 | strong runner-up, loses (band calibration + mandatory F-C-style Duplex fallback = two mechanisms; trusts inflated attr bbox) |
+| **F-E** (silently clamp numerator at floor, ratio ≤ 1) | **FAIL** | n/a | n/a | 1.275 (dropped) | **DISQUALIFIED** — clamp gives min(250001,74.509)/74.509 = 1.0 ≥ 1/8 → target compliant; also ADR-003 honesty violation |
+
+### Untrustworthy-window aero semantics (laundering) — L-* candidates
+
+| Candidate | GATE-S | GATE-N | GATE-X | Weighted total | Verdict |
+|---|---|---|---|---|---|
+| **L-0** (null / `None → 0.0`, definite verdict) | **FAIL** | n/a | n/a | 1.325 (dropped) | **DISQUALIFIED** — can NEVER emit undetermined; coerces the absurd window to 0.0 and reports a definite verdict on an unbounded ratio (ADR-003); the documented `or 0.0` status quo (`checker.py:442`) |
+| **L-1** (strict: any untrustworthy serving window ⇒ aero=None) | PASS | PASS | PASS | 4.600 | safe near-tie; fully ADR-003-faithful, simplest, avoids L-2's lower-bound false-pass entirely; only gap is a precision (can't certify a genuine lower-bound pass) |
+| **L-2** (lower-bound: pass if trustworthy windows alone clear 1/8; else any untrustworthy ⇒ undetermined; else violation) | PASS | PASS | PASS | **4.725** | **WINNER (L axis)** by weighted total — highest coverage/operability; **conditional** on the conservative-numerator fix below |
+
+### Winner: **F-C + L-2** (relative-to-floor plausibility upper bound × lower-bound aero semantics)
+
+Both analysts agree on **F-C** outright. The L choice is a **near-tie: L-2 (4.725) vs L-1 (4.600)**.
+Per the frozen decision rule (max weighted, no stability clause) the winner is **F-C + L-2**, but it
+carries **one mandatory implementation condition** (the L-2 conservative-numerator fix below); without
+that fix the equal-quality, lower-risk choice is **F-C + L-1**.
+
+**WHY F-C.** Re-verified probes: max conformant win/floor ratio = **0.381** (FZK
+`2RSCzLOBz4FAK$_wE8VckM`, 4.8/12.595) and **0.270** (Institute); **zero** conformant spaces over
+ratio 1 → F-C over-rejects nothing on the corpus (GATE-N with a wide margin), while the absurd ratio
+= 250001/74.509 = **3355 ≫ 1** is caught (GATE-S). F-C uses **no calibration constant** (the room's
+own floor scale), needs **no attr/Qto data** so it is immune to the measured ~21% attr/Qto gap (attr
+1.0 vs Qto 0.785) **and** works on Duplex's Qto-less windows with **NO fallback** — the decisive
+advantage over F-D, which would have to re-implement F-C as its Duplex fallback (Duplex is 24/24
+attr-only, verified).
+
+**WHY L-2.** It certifies genuine lower-bound passes instead of needlessly marking them undetermined
+(highest coverage .30 and operability .10), while still routing the absurd case to undetermined: on
+`c1_absurd_pos_window` the trustworthy twin (1.0/74.509 = 0.013) cannot clear 1/8 and the other
+window is untrustworthy → undetermined (GATE-S). The **mandatory caveat** (refuter, major): L-2's
+PASS is a true lower bound **only if the trusted numerator under-estimates** openable area, but
+`window_area` prefers the attr **bounding box** which **over-estimates** (attr 1.0 vs Qto 0.785,
+factor up to 1.274). A near-threshold trusted window could then yield a definite pass where the true
+openable ratio fails — a NEW false-pass class. It is **not** gate-failing (no pinned fixture
+exercises it; `c1_unmeasurable_partial` is an untested gap), so L-2 survives, **but the fix MUST force
+the lower-bound numerator to the conservative openable area** (min of attr/Qto, Qto-preferred). If
+that condition is not adopted, switch to **F-C + L-1**.
+
+### Corpus differential (HEAD vs after-fix)
+
+Re-run verbatim 2026-06-30 (`gen_adversarial.py` → 8 fixtures; `eval_corpus.py`):
+
+| Fixture | Expected | HEAD (FIXED column) | After F-C+L-2 fix |
+|---|---|---|---|
+| `c1_absurd_pos_window.ifc` | viol=4, **target undetermined** | **viol=4 undet=0 [WRONG] — FIX FAIL** | viol=4, **target undetermined** (undet=1) — PASS |
+
+HEAD output (verbatim): `c1_absurd_pos_window.ifc  viol=4  ...  viol=4 undet=0 [WRONG]  FIX FAIL`
+and the footer `GATE-S (fixed safe on all adversarial fixtures): FAIL (1)`. At HEAD the
+`500×500 → 250000 m²` window passes C1-B positivity (`checker.py:326-333`), inflates the aero
+numerator, and flips target `2dQFggKBb1fOc1CqZDIDlx` compliant (FZK 5→4). After the fix the served
+window is marked untrustworthy (win/floor 3355 > 1), L-2 cannot clear 1/8 on the trustworthy twin
+alone, so `aero_ok=None` → via the `compliant` keystone the target reads **undetermined** → viol=4,
+undet=1, target never compliant. GATE-N controls must remain unchanged: **FZK viol=5/undet=0,
+Institute viol=2/undet=0, Duplex viol=0/undet=21**.
+
+### Implementation guidance (concrete; `sandbox/checker.py`)
+
+1. **`windows_serving` (`checker.py:432-443`) returns a single float, discarding per-window trust.**
+   Refactor to return per-window trust info — e.g. a `trustworthy_total` (sum of windows passing the
+   F-C plausibility test, computed against the room's floor) plus an `untrustworthy_present` flag, or
+   a list of `(area_or_None, trustworthy_bool)`. **Do NOT keep the bare `or 0.0` laundering** (that
+   IS L-0): a `None`/untrustworthy window must propagate as `untrustworthy_present=True`, never be
+   coerced to 0.0.
+2. **F-C trust test belongs in `check_space` (aero branch, `checker.py:484-491`)** where `area`
+   (floor) is in scope: a served window (or served total) whose area exceeds the floor area
+   (ratio > 1) is physically impossible for openable glazing → mark untrustworthy. Use the room's own
+   `floor_area`; no constant. Because Duplex serves 0 windows via `space.BoundedBy` (verified) and the
+   FZK/Institute max conformant ratio is 0.381, this fires **only** on the absurd fixture → GATE-N
+   preserved with a wide margin.
+3. **L-2 semantics in the aero branch** (replace line 487
+   `finding.aero_ok = (win / area) + 1e-9 >= thr.aero_illuminating_ratio`):
+   - `trustworthy_ratio = trustworthy_total / area`;
+   - if `trustworthy_ratio + 1e-9 >= thr.aero_illuminating_ratio`: `aero_ok = True` (lower bound
+     cleared; pass even if an untrustworthy window is also present);
+   - elif `untrustworthy_present`: `aero_ok = None` (undetermined) and append a `why` note naming the
+     untrustworthy window/ratio;
+   - else: `aero_ok = False` (all trustworthy, bar not cleared → genuine violation).
+   - **MANDATORY (neutralizes the refuter's L-2 false-pass):** `trustworthy_total` must be the
+     **CONSERVATIVE openable area** — `min(attr, Qto)` when both exist (Qto-preferred when only it
+     exists), NOT the attr-preferring `window_area` — so the PASS is a true lower bound. This does not
+     touch FZK/Institute gate behavior (conformant passers clear 1/8 under either numerator).
+4. **Duplex fallback: NONE required.** F-C uses no attr/Qto data, so there is no Duplex fallback to
+   write — its whole advantage over F-D. Verified: Duplex is 24/24 attr-only and, more importantly,
+   Duplex spaces serve 0 windows via `space.BoundedBy`, so `windows_serving` returns 0 for every
+   Duplex space and they stay undetermined via the missing-Qto path exactly as in the frozen control
+   (Duplex 0 viol / 21 undet). Had F-D been chosen, its Duplex fallback would have HAD to be the
+   floor-relative bound (i.e. re-implement F-C) — the reason F-C dominates.
+5. **`SpaceFinding.compliant` (`checker.py:247-259`) MUST stay untouched.** It is the keystone that
+   already turns `aero_ok=None` into `compliant=None` for habitable/unknown (it requires both
+   `height_ok` and `aero_ok` non-None). Setting `aero_ok=None` in the aero branch is exactly what
+   routes the target to undetermined. Do not modify the property.
+6. **INSTRUMENT FIX (do before relying on GATE-S):** `research/corpus/eval_corpus.py` `ok()`
+   (`:77-82`) asserts only `violations == want_v` AND target not `True`; it does **not** assert
+   `undetermined >= 1` / target-specifically-undetermined. A fix that *drops* the target from the
+   report could pass GATE-S with undet=0. Add an assertion that the target gid is specifically
+   undetermined (`compliant_by_gid.get(gid) is None`) for the `c1_absurd_pos_window` pin. Pin:
+   **viol=4 AND target undetermined**.
+
+**GATE-N preservation check.** The F-C test fires only when win/floor > 1 (zero conformant spaces;
+max 0.381) and the L-2 conservative-numerator change only lowers a ratio already far from 1/8 for
+conformant passers → no conformant space flips. After implementing, re-run
+`python research/corpus/gen_adversarial.py && python research/corpus/eval_corpus.py` and confirm
+FZK 5/0, Institute 2/0, Duplex 0/21 unchanged and `c1_absurd_pos_window → viol=4` with the target
+undetermined.
+
+### Negative results (what lost and why — no file-drawer)
+
+- **F-A (DISQUALIFIED GATE-S, 1.175):** the documented no-upper-bound null — re-verified failing at
+  HEAD (`GATE-S … FAIL (1)`; `c1_absurd_pos_window  viol=4 undet=0 [WRONG]  FIX FAIL`). The 250000 m²
+  window passes C1-B (`checker.py:326-333`) and inflates the aero numerator → false pass (FZK 5→4).
+  GATE-N/X pass trivially (no behavior change) but coverage/spec are zero.
+- **F-E (DISQUALIFIED GATE-S + ADR-003, 1.275):** clamping the numerator at floor area gives
+  min(250001,74.509)/74.509 = 1.0 ≥ 1/8 → `aero_ok=True` → target compliant (FZK 5→4), the exact
+  false pass F-A produces. Also violates ADR-003 (`docs/decisions.md`: absence of evidence is never
+  evidence of compliance) by converting an absurd window into a definite PASS instead of surfacing it
+  as undetermined.
+- **L-0 (DISQUALIFIED, 1.325):** `windows_serving … or 0.0` (`checker.py:442`) can NEVER emit
+  undetermined and reports a definite verdict on an unbounded ratio (ADR-003, falsification (d)). Even
+  paired with a detecting F that returns None for the absurd window, L-0 coerces it to a measured 0.0.
+  The documented disqualified status quo; no stability clause protects it.
+- **F-B survivor, loses (2.700):** a fixed cap catches the 250000 m² window (so paired with L-1/L-2
+  the target becomes undetermined) and leaves conformant windows untouched, but the cap is a **magic
+  calibration constant** with no physical anchor and does not scale to the room. Refuter CASE: a 90 m²
+  window under a 100 m² cap on a 2 m² floor (ratio 45) is wrongly admitted — an open false-pass class
+  the corpus does not exercise. Inferior on spec (.15) and simplicity (.15).
+- **F-D strong runner-up, loses (4.000):** passes all gates with a 2× band — all 217 both-path
+  windows inside (FZK 11 ratio 1.000–1.274, Institute 206 ratio 1.000; absurd 250000/0.785 = 318437
+  far outside) — **but Duplex is 24/24 attr-only**, so the band has nothing to cross-check and F-D
+  **MUST** borrow a floor-relative fallback (effectively F-C), making it two mechanisms = lowest
+  simplicity. It also trusts the attr bounding box (~21–27% larger than openable Qto), feeding a
+  mildly inflated numerator.
+- **L-1 survivor, near-tie (4.600):** strict undetermined; paired with F-C the target is undetermined
+  → viol=4/undet=1 (GATE-S exact); all conformant windows are trustworthy (zero ratio>1) so no flips
+  (GATE-N). Fully ADR-003-faithful, dead simple (top simplicity), avoids L-2's lower-bound false-pass
+  entirely. Only gap: it cannot certify a genuine lower-bound pass — a precision gap, not a safety
+  gap. The safe equal-quality alternative to L-2.
+
+**SURVIVORS RANKED:** F axis **F-C (4.675) > F-D (4.000) > F-B (2.700)**; L axis
+**L-2 (4.725) > L-1 (4.600)**.
+
+**Independently re-verified load-bearing numbers:** GATE-S FAILs at HEAD (`FAIL (1)`); FZK windows
+11/11 both-path ratio 1.000–1.274; Institute 206/206 both-path ratio 1.000; Duplex 24/24 attr-only
+(no Qto); max conformant win/floor 0.381 (FZK) / 0.270 (Institute), zero over ratio 1; absurd target
+win/floor 3355; absurd-window attr/Qto 318437 vs trusted twin 1.274.
+
+### Residual risks / recommended follow-ups (C-1b)
+
+1. **F-C latent over-rejection (refuter, major):** a genuine small-room/large-glazed-wall habitable
+   space (conservatory, sunroom, shop-front, glazed stairwell) with served window area > floor area
+   (ratio > 1) would be marked untrustworthy → undetermined — a false-fail. This is the prereg's own
+   §3 "small room with a large window wall" edge. It is **latent on the fixtures** (zero conformant
+   space exceeds ratio 1; max 0.381), so GATE-N holds, but it is real for production glazed rooms.
+   An honest `undetermined` is **fail-closed** (never a false pass), so harm is limited to
+   over-conservatism. Mitigation: openable area rarely exceeds floor area; add a glazed-wall fixture
+   before production to bound it.
+2. **L-2 lower-bound premise (refuter, major):** the PASS branch is a valid lower bound only if the
+   trusted numerator under-estimates openable area, but `window_area` prefers the attr bounding box
+   which over-estimates (attr 1.0 vs Qto 0.785, factor up to 1.274). Without the mandated
+   conservative-numerator fix (`min(attr, Qto)`, Qto-preferred), a near-threshold trusted window could
+   produce a definite pass where the true openable ratio fails — a NEW false-pass class. Fully
+   neutralized by the mandated fix; if not adopted, switch to **F-C + L-1**.
+3. **Corpus instrument gap (refuter, minor):** `eval_corpus.py` GATE-S (`ok()` :77-82) does not
+   assert undet≥1 / target-specifically-undetermined, so GATE-S could be passed by a fix that *drops*
+   the target rather than making it undetermined. Fix the instrument (see guidance #6) before trusting
+   the gate.
+4. **Untested distinguishing case:** L-2's coverage advantage over L-1 (a PASS where trustworthy
+   windows alone clear 1/8 with an absurd window present — `c1_unmeasurable_partial`) is **not
+   demonstrated by any pinned fixture**, so the 0.125 weighted-total edge rests partly on an
+   unexercised case. Construct the fixture or keep it recorded as a gap.
+5. **Laundering remains LATENT (ADDENDUM 1):** the only no-attr-no-Qto-serving-window path among
+   *measurable* spaces is not exercised by any fixture (a measurable space always has a Qto fallback;
+   Duplex is already undetermined). Add a **function-level honesty test** (a `None` among measurable
+   serving windows → aero undetermined) to lock it, plus an end-to-end no-attr-no-Qto fixture.
+
+### Limitations (honest)
+
+- **The laundering bug is LATENT on the 3 fixtures** (ADDENDUM 1): a negative attr falls back to a
+  valid Qto, so on FZK/Institute/Duplex the `or 0.0` coercion can only *lower* the numerator →
+  false-fails/honesty gaps, never a false-pass. The laundering fix is therefore **function-tested**
+  (the proposed honesty unit test), not end-to-end corpus-tested. The reachable GATE-S residual is the
+  C1-F absurd-positive area, which the corpus *does* express (`c1_absurd_pos_window`).
+- **No held-out IFC.** All C-1b evidence derives from the 3 in-repo fixtures + the constructed
+  adversarial fixture; no third-party IFC4 with populated window Qto and a glazed-wall edge was
+  obtainable this round. The F-C over-rejection edge and L-2's distinguishing PASS are unexercised by
+  any held-out file.
+- **The winner is partly evaluated by reasoning + probes, not a full build of F-C+L-2.** The gate
+  calls and the after-fix differential rest on probes against `sandbox/checker.py` and the frozen
+  corpus; the recommendation is to implement F-C + L-2 (with the mandatory conservative-numerator
+  condition) and re-run `gen_adversarial.py + eval_corpus.py` to confirm before merge.
