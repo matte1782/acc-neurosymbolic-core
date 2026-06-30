@@ -153,11 +153,54 @@ def test_c1b_mutant_killed() -> None:
     _check("C1b_head_undetermined", tgt["compliant"] is None)
 
 
+def test_c1b_inflation_mutant_killed() -> None:
+    # C-1b inflation mutant (ADR-007c): an attr-preferring numerator over all-trustworthy windows
+    # false-passes an inflated bounding box (attr <= floor, clears 1/8) whose real Qto contradicts it;
+    # HEAD's CONSERVATIVE min(attr,Qto) numerator keeps it a violation.
+    import os
+    import tempfile
+    try:
+        import ifcopenshell
+    except Exception:  # noqa: BLE001
+        _skip("C1b_inflation_mutant_killed", "ifcopenshell absent")
+        return
+    if not _FZK.exists():
+        _skip("C1b_inflation_mutant_killed", "fixture absent")
+        return
+    m = ifcopenshell.open(str(_FZK))
+    scale = C.length_scale_to_m(m)
+    gid = None
+    for s in m.by_type("IfcSpace"):
+        f = C.check_space(s, scale, False, C.Thresholds())
+        if (f.compliant is False and f.occupancy != "accessory" and f.height_ok
+                and not f.aero_ok and C.serving_windows(s)):
+            gid = s.GlobalId
+            break
+    if gid is None:
+        _skip("C1b_inflation_mutant_killed", "no aero-violation space w/ window")
+        return
+    sp = next(s for s in m.by_type("IfcSpace") if s.GlobalId == gid)
+    floor = C.space_floor_area(sp, scale)
+    w = C.serving_windows(sp)[0]
+    w.OverallHeight, w.OverallWidth = 9.0, 8.0   # 72 m2 bbox, <= floor; Qto stays ~0.785
+    wins = C.serving_windows(sp)
+    pref_num = sum(C.window_area(x, scale) or 0.0 for x in wins)            # mutant: attr-preferring
+    cons_num = sum(min([v for v in C._window_area_bounds(x, scale) if v is not None], default=0.0)
+                   for x in wins)                                           # HEAD: conservative
+    _check("C1b_mutant_attr_numerator_false_passes", (pref_num / floor) + 1e-9 >= 0.125)
+    _check("C1b_conservative_numerator_fails", (cons_num / floor) + 1e-9 < 0.125)
+    p = os.path.join(tempfile.mkdtemp(), "inflated.ifc")
+    m.write(p)
+    tgt = next(f for f in C.run(p)["findings"] if f["global_id"] == gid)
+    _check("C1b_head_inflated_not_compliant", tgt["compliant"] is not True)
+
+
 def main() -> int:
     test_c1_mutant_killed()
     test_c2_mutant_killed()
     test_h1_mutant_killed()
     test_c1b_mutant_killed()
+    test_c1b_inflation_mutant_killed()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

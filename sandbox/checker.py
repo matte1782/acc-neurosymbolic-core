@@ -497,37 +497,40 @@ def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> Spa
     # spaces (bagni, ripostigli, corridoi) follow separate ventilation rules — skip R2 there.
     if not aero_applies:
         finding.notes.append("aero ratio N/A for accessory room (separate ventilation rules)")
-    elif area:
+    elif area and area > 0:                                # area>0 defends a latent negative-floor path
         # C-1b trustworthy-window aero semantics (F-C plausibility + L-2 lower bound; ADR-003,
-        # research/DECISION_MATRIX.md). A serving window is UNTRUSTWORTHY if it is unmeasurable (None)
-        # or its area exceeds the floor it serves (ratio > 1 is non-physical for openable glazing —
-        # no magic constant; the room's own floor is the scale). An untrustworthy window's area is
-        # NEVER laundered to 0.0 (the old `or 0.0` bug).
+        # DECISION_MATRIX §C-1b). A serving window is UNTRUSTWORTHY if unmeasurable (None) or its area
+        # exceeds the floor it serves (ratio > 1 is non-physical for openable glazing — no magic
+        # constant; the room's own floor is the scale). The aero numerator ALWAYS uses the
+        # CONSERVATIVE min(attr, Qto) lower bound, NEVER the attr-preferring window_area: an inflated
+        # bounding-box attr that is still <= floor would otherwise pass F-C as 'trustworthy' yet
+        # fabricate area the Qto net glazing contradicts -> a false compliant pass (adversarial-verify
+        # 2026-06-30, ADR-007c; an earlier byte-identical refinement narrowed the conservative numerator
+        # to the untrust branch only and reopened this). An untrustworthy window is never laundered to 0.0.
         untrust_present = any(pref is None or pref > area for pref, _ in wdata)
-        trust = [(pref, cons) for pref, cons in wdata if pref is not None and pref <= area]
-        win_trust = sum(pref for pref, _ in trust)
+        win_trust = sum(cons for pref, cons in wdata if pref is not None and pref <= area)
         finding.window_area_m2 = round(win_trust, 3)
         finding.aero_ratio = round(win_trust / area, 4)
-        if not untrust_present:
-            # all serving windows trustworthy -> the ordinary 1/8 check (byte-identical to before).
-            finding.aero_ok = (win_trust / area) + 1e-9 >= thr.aero_illuminating_ratio
-            if win_trust == 0.0:
-                finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
-        else:
-            # L-2: an untrustworthy window is present. PASS only if the trustworthy windows ALONE,
-            # measured by their CONSERVATIVE lower bound min(attr, Qto), already clear 1/8 (so the
-            # pass is a true lower bound); otherwise the ratio cannot be bounded -> UNDETERMINED,
-            # never a laundered pass or a guessed fail. SpaceFinding.compliant turns aero_ok=None into
-            # compliant=None (the keystone — left untouched).
-            cons_trust = sum(cons for _, cons in trust)
-            if (cons_trust / area) + 1e-9 >= thr.aero_illuminating_ratio:
-                finding.aero_ok = True
+        clears = (win_trust / area) + 1e-9 >= thr.aero_illuminating_ratio
+        if clears:
+            # the trustworthy windows' conservative lower bound already clears 1/8 -> PASS (a true
+            # lower bound, so an also-present untrustworthy window cannot turn a pass into a fail).
+            finding.aero_ok = True
+            if untrust_present:
                 finding.notes.append("aero passes on trustworthy windows alone (conservative lower "
                                      "bound); untrustworthy window area ignored")
-            else:
-                finding.aero_ok = None
-                finding.notes.append("untrustworthy serving-window area (unmeasurable or larger than "
-                                     "the floor) — aero ratio cannot be bounded; undetermined (ADR-003)")
+        elif untrust_present:
+            # the ratio cannot be bounded (an untrustworthy window might or might not lift it past 1/8)
+            # -> UNDETERMINED, never a laundered pass or a guessed fail. SpaceFinding.compliant turns
+            # aero_ok=None into compliant=None (the keystone — untouched).
+            finding.aero_ok = None
+            finding.notes.append("untrustworthy serving-window area (unmeasurable or larger than the "
+                                 "floor) — aero ratio cannot be bounded; undetermined (ADR-003)")
+        else:
+            # all windows trustworthy and the conservative bar is not cleared -> genuine violation.
+            finding.aero_ok = False
+            if win_trust == 0.0:
+                finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
     else:
         finding.notes.append("no NetFloorArea — cannot evaluate aero ratio")
 

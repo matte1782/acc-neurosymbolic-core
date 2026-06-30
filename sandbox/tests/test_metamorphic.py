@@ -156,11 +156,33 @@ def test_mr4_absurd_window_undetermined() -> None:
     _check("MR4_absurd_window_not_compliant", tgt["compliant"] is not True)
 
 
+def test_mr5_inflated_window_cannot_pass() -> None:
+    # C-1b (ADR-007c): an inflated bounding-box window (attr <= floor so it looks 'trustworthy', but
+    # its Qto net glazing is small) must NOT manufacture a compliant aero verdict — the conservative
+    # min(attr,Qto) numerator keeps the target non-compliant. Oracle-free metamorphic relation.
+    ifc = _ifc()
+    if ifc is None or not _FZK.exists():
+        _skip("MR5_inflated_window_cannot_pass", "ifcopenshell/fixture absent")
+        return
+    gid = _aero_violation_space(ifc, _FZK)
+    if gid is None:
+        _skip("MR5_inflated_window_cannot_pass", "no aero-violation space w/ window")
+        return
+    m = ifc.open(str(_FZK))
+    sp = next(s for s in m.by_type("IfcSpace") if s.GlobalId == gid)
+    w = _serving_windows(sp)[0]
+    w.OverallHeight, w.OverallWidth = 9.0, 8.0   # 72 m2 bbox <= floor; Qto stays small
+    rep = _run_tmp(ifc, m)
+    tgt = next(f for f in rep["findings"] if f["global_id"] == gid)
+    _check("MR5_inflated_window_not_compliant", tgt["compliant"] is not True)
+
+
 def main() -> int:
     test_mr1_invalid_geometry_cannot_help()
     test_mr2_no_unit_becomes_refusal()
     test_mr3_declared_mm_still_processes()
     test_mr4_absurd_window_undetermined()
+    test_mr5_inflated_window_cannot_pass()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

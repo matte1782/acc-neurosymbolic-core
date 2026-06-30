@@ -138,6 +138,30 @@ def main() -> int:
             "prefix_defect_expected": "pre-fix AND C1-B both return 250000 (positive) -> target "
                                       "compliant -> FZK 4 (false pass C1-B does not catch).",
         }
+        # c1_inflated_window (C-1b GATE-S, the adversarial-verify bypass, ADR-007c): inflate the
+        # target window's bounding-box attr to 72 m2 — still <= the 74.5 m2 floor, so F-C's ">floor"
+        # test deems it TRUSTWORTHY — while its real Qto net glazing stays 0.785 m2. If the aero
+        # numerator preferred attr (the reopened bug) the target would false-pass (72/74.5=0.97); the
+        # CONSERVATIVE min(attr,Qto) numerator uses 0.785 -> target stays a VIOLATION. Guards against
+        # reverting to the attr-preferring all-trustworthy branch.
+        m10 = ifcopenshell.open(_FZK)
+        sp10 = next(s for s in m10.by_type("IfcSpace") if s.GlobalId == gid)
+        w10 = _serving_windows(m10, sp10)[0]
+        w10.OverallHeight = 9.0
+        w10.OverallWidth = 8.0   # 72 m2 <= floor; Qto Area untouched (~0.785)
+        p10 = os.path.join(_OUT, "c1_inflated_window.ifc")
+        m10.write(p10)
+        expected["c1_inflated_window.ifc"] = {
+            "pathology": "target window bounding-box attr inflated to 72 m2 (<= 74.5 floor) while Qto stays ~0.785",
+            "target_gid": gid,
+            "expected_total_violations": 5,
+            "target_must_not_be_compliant": True,
+            "spec_rationale": "an inflated attr <= floor evades F-C ('>floor'); the conservative "
+                              "min(attr,Qto) numerator uses the real 0.785 net glazing -> aero fails "
+                              "-> target stays a VIOLATION (FZK 5). Never compliant.",
+            "prefix_defect_expected": "attr-preferring all-trustworthy numerator -> 72/74.5 passes -> "
+                                      "target compliant -> FZK 4 (false pass the conservative numerator closes).",
+        }
         # NOTE: NaN/inf window dims are UNREPRESENTABLE in a written IFC — ifcopenshell raises
         # "Only finite values are allowed" on setArgumentAsDouble. So the IFC-FILE attack surface for
         # OverallHeight/Width is limited to finite negative/zero; NaN/inf can only arise from
