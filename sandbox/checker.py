@@ -43,18 +43,24 @@ except ImportError as exc:  # pragma: no cover - environment guard
 # (one-directional: checker -> graph), so there is no cycle.
 import graph  # noqa: E402
 
-# Stage 5 (ADR-008) — the LEGAL COMPARISON layer is declarative: check_space materializes each
-# space's extracted facts into an in-memory rdflib A-Box and validates it against the SHACL shapes
-# in ontology/dm1975_salvacasa.ttl via pyshacl. EXTRACTION math (the P0 fixes: positivity,
-# unit resolvability, trustworthy-window F-C/L-2) stays in Python and runs BEFORE materialization.
+# Stage 5 (ADR-008) / Stage 5b (ADR-009) — the LEGAL COMPARISON layer is declarative and
+# DECOUPLED: checker.py is the FEATURE EXTRACTOR (IfcOpenShell parsing, P0-guarded measurements,
+# trust decisions, and the per-space A-Box materialization); orchestrator.py owns the RULES side
+# (shapes loading/parameterization, pyshacl firing, deterministic SPARQL report parsing).
+# EXTRACTION math (the P0 fixes: positivity, unit resolvability, trustworthy-window F-C/L-2) stays
+# in Python and runs BEFORE any graph exists. orchestrator imports no checker code at module load
+# (its `import checker` is lazy, inside ComplianceOrchestrator.run()) -> no import cycle.
+import time  # noqa: E402
 from decimal import Decimal  # noqa: E402
 
-from rdflib import Graph as _RdfGraph, Literal as _RdfLiteral, Namespace as _RdfNamespace  # noqa: E402
+from rdflib import Graph as _RdfGraph, Literal as _RdfLiteral  # noqa: E402
 from rdflib import RDF as _RDF, URIRef as _URIRef  # noqa: E402
 from rdflib.namespace import XSD as _XSD  # noqa: E402
 
-_SH = _RdfNamespace("http://www.w3.org/ns/shacl#")
-_LEGAL = _RdfNamespace("https://acc.local/legal#")
+import orchestrator  # noqa: E402
+# Back-compat re-exports (tests + callers address these through checker.*):
+from orchestrator import load_shacl_shapes  # noqa: E402,F401
+_SHACL_PATH = orchestrator.DEFAULT_SHACL_PATH
 
 # --- Verified thresholds (rules/dm_1975_salva_casa.md) ---------------------------------
 MIN_HEIGHT_HABITABLE_M = 2.70   # DM 5/7/1975 art. 1
@@ -463,162 +469,60 @@ def serving_windows(space):
             and getattr(rel, "RelatedBuildingElement").is_a("IfcWindow")]
 
 
-# --- Stage 5: declarative SHACL evaluation of the LEGAL comparison layer (ADR-008) -------------
-# ontology/dm1975_salvacasa.ttl carries the DM-1975 / Salva-Casa rules as sh:NodeShape/
-# sh:PropertyShape. check_space materializes each space's EXTRACTED facts (P0 math untouched,
-# runs first) into a tiny A-Box and pyshacl-validates it; the ValidationReport is parsed back into
-# the tri-valued height_ok/aero_ok via the MinCount-dominant post-pass (blueprint §3.5):
-#   MinCount result (measurement ABSENT — the materializer omitted an unmeasurable value, never a
-#   laundered 0.0)                               -> None  (UNDETERMINED)
-#   MinInclusive result (present-but-below)      -> False (VIOLATION) — for aero, remapped to None
-#     when the ratio was UNBOUNDED (an untrustworthy window present, C-1b L-2)
-#   no result                                    -> True  (PASS)
-# Fail-closed: a missing/empty/mis-targeted shapes file RAISES at load (anti-vacuous-conformance
-# guard); an unexpected result path/constraint component RAISES (never silently mapped).
-_SHACL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "ontology", "dm1975_salvacasa.ttl")
-_SHACL_CACHE: dict = {}          # (h_hab, h_acc, h_sc, aero) -> parameterized shapes Graph
+# --- Stage 5/5b: A-Box materialization (the feature-extractor side of the SHACL split) ---------
+# The RULES side (shapes loading + fail-closed guards + pyshacl + deterministic SPARQL report
+# parsing) lives in orchestrator.py (ADR-009). checker keeps exactly what belongs to the
+# EXTRACTOR: projecting ONE space's extracted facts into acc: triples — omitting any unmeasurable
+# value so sh:minCount fires UNDETERMINED (never a laundered 0.0) — plus the defense-in-depth
+# guards at this fail-open boundary (the post-pass maps no-result -> True).
 _SPACE_NODE = _URIRef("urn:acc:eval:space")   # the single-space A-Box focus node
 
-# The four stable property-shape URIs the loader re-parameterizes from Thresholds — so the
-# gate-verified compiled JSON stays the numeric source of truth (Stage-1 dynamic coupling: edit the
-# law -> recompile -> the shapes carry the new number, no .py and no .ttl edit).
-_SHACL_THRESHOLD_SLOTS = (
-    # (property-shape local name, Thresholds attribute, sh:message template — the message is
-    #  re-generated WITH the value so an overridden threshold never reports a stale number)
-    ("MinHeightHabitable_PS", "min_height_habitable_m",
-     "height below the {v} m habitable minimum (DM 1975 art.1)"),
-    ("MinHeightAccessory_PS", "min_height_accessory_m",
-     "height below the {v} m accessory minimum (DM 1975 art.1)"),
-    ("MinHeightSalvaCasa_PS", "min_height_salva_casa_m",
-     "height below the {v} m Salva-Casa derogated minimum (DPR 380/2001 art.24 c.5-bis)"),
-    ("MinAeroRatio_PS", "aero_illuminating_ratio",
-     "aero-illuminating ratio below the {v} (1/8) floor-area minimum (DM 1975 art.5)"),
-)
-_SHACL_TARGET_CLASSES = ("AccessorySpace", "HabitableBaselineSpace", "HabitableSalvaCasaSpace")
 
-
-def load_shacl_shapes(thr: "Thresholds", path: "Optional[str]" = None) -> "_RdfGraph":
-    """Load + validate + parameterize the SHACL shapes graph. FAIL-CLOSED (mirrors
-    load_applicability): a missing/unparseable file raises; a shapes graph that does not target all
-    three materialization classes raises (a mis-targeted shape set would conform VACUOUSLY — a
-    silent pass); a missing threshold slot raises (never a silently unparameterized bar)."""
-    path = path or _SHACL_PATH
-    g = _RdfGraph()
-    g.parse(path, format="turtle")               # FileNotFoundError / parse error -> fail-closed
-    targeted = set(g.objects(None, _SH.targetClass))
-    expected = {graph.ACC[c] for c in _SHACL_TARGET_CLASSES}
-    if not expected <= targeted:
-        raise ValueError(f"SHACL shapes {path!r}: missing sh:targetClass for "
-                         f"{sorted(str(c) for c in expected - targeted)} — a space materialized "
-                         f"under an untargeted class would conform vacuously (fail-closed)")
-    for ps_name, thr_attr, msg_tmpl in _SHACL_THRESHOLD_SLOTS:
-        ps = _LEGAL[ps_name]
-        if g.value(ps, _SH.minInclusive) is None:
-            raise ValueError(f"SHACL shapes {path!r}: {ps_name} has no sh:minInclusive slot "
-                             f"(fail-closed — refusing an unparameterized legal bar)")
-        # sh:minCount is THE load-bearing fail-closed construct: it is the only thing that turns an
-        # ABSENT measurement (the materializer omits unmeasurable values) into UNDETERMINED instead
-        # of a vacuous PASS (the post-pass maps no-result -> True). A shapes file without it would
-        # silently demote undetermined -> pass (adversarial-verify 2026-07-02, ADR-008a) — refuse it.
-        mc = g.value(ps, _SH.minCount)
-        if mc is None or int(mc) < 1:
-            raise ValueError(f"SHACL shapes {path!r}: {ps_name} has no sh:minCount >= 1 — the "
-                             f"fail-closed UNDETERMINED construct is missing (an absent measurement "
-                             f"would read as PASS); refusing (fail-closed)")
-        val = getattr(thr, thr_attr)             # resolves via the record model; raises if absent
-        g.set((ps, _SH.minInclusive, _RdfLiteral(Decimal(str(val)), datatype=_XSD.decimal)))
-        # message parameterized WITH the value: an overridden bar (e.g. an edited-law recompile)
-        # must never emit a message asserting the stale default number.
-        g.set((ps, _SH.message, _RdfLiteral(msg_tmpl.format(v=val))))
-    return g
-
-
-def _shacl_shapes(thr: "Thresholds") -> "_RdfGraph":
-    key = (thr.min_height_habitable_m, thr.min_height_accessory_m,
-           thr.min_height_salva_casa_m, thr.aero_illuminating_ratio)
-    if key not in _SHACL_CACHE:
-        _SHACL_CACHE[key] = load_shacl_shapes(thr)
-    return _SHACL_CACHE[key]
-
-
-def _shacl_verdict(occ: str, salva_swap: bool, h, aero_ratio, aero_unbounded: bool,
-                   thr: "Thresholds"):
-    """Materialize one space's facts and SHACL-validate them. Returns
-    ``(height_ok, aero_ok, violation_messages)`` — each verdict tri-valued (True/False/None).
-
-    Materialization = projection of INPUT facts only: the target class encodes occupancy (from the
-    Stage-4b graph) + the Salva-Casa regime flag; ``h``/``aero_ratio`` are the extracted values
-    (None = unmeasurable -> triple OMITTED so sh:minCount fires UNDETERMINED). The legal
-    comparisons happen in the shapes, not here."""
-    import pyshacl  # heavy import, deferred; cached in sys.modules after first use
-
+def materialize_space_abox(occ: str, salva_swap: bool, h, aero_ratio) -> "_RdfGraph":
+    """Project one space's EXTRACTED facts into the per-space A-Box (a pure input projection:
+    target class = occupancy [Stage-4b graph] + the Salva-Casa regime flag; measurements as
+    xsd:decimal via the float's shortest round-trip repr — float(2.4) as xsd:double compares BELOW
+    Decimal('2.4') and flipped an exactly-2.40 m room to VIOLATION, ADR-008a). Unmeasurable values
+    are OMITTED (sh:minCount -> UNDETERMINED). Non-finite values RAISE: extraction (P0) already
+    rejects them, but never trust the upstream alone at a fail-open boundary (ADR-008a)."""
+    if h is not None and not math.isfinite(float(h)):
+        raise ValueError(f"materialize_space_abox: non-finite height {h!r} (fail-closed)")
+    if aero_ratio is not None and not math.isfinite(float(aero_ratio)):
+        raise ValueError(
+            f"materialize_space_abox: non-finite aero ratio {aero_ratio!r} (fail-closed)")
     if occ == "accessory":
         cls = graph.ACC.AccessorySpace
     elif salva_swap:
         cls = graph.ACC.HabitableSalvaCasaSpace
     else:
         cls = graph.ACC.HabitableBaselineSpace
-
-    # Defense-in-depth: extraction (P0) already rejects non-finite values, but the post-pass maps
-    # no-result -> True, so an uncomparable literal slipping through would fail OPEN. Never trust
-    # the upstream alone at a fail-open boundary — raise here (adversarial-verify 2026-07-02).
-    if h is not None and not math.isfinite(float(h)):
-        raise ValueError(f"_shacl_verdict: non-finite height {h!r} reached materialization (fail-closed)")
-    if aero_ratio is not None and not math.isfinite(float(aero_ratio)):
-        raise ValueError(f"_shacl_verdict: non-finite aero ratio {aero_ratio!r} reached "
-                         f"materialization (fail-closed)")
-
     data = _RdfGraph()
     data.add((_SPACE_NODE, _RDF.type, cls))
-    # Measurements are materialized as xsd:decimal via the float's SHORTEST ROUND-TRIP repr, NOT as
-    # xsd:double: float(2.4) is stored below the exact decimal 2.4, so a double-vs-decimal compare
-    # flipped a genuinely-2.40 m room PASS -> VIOLATION at the exact bar (adversarial-verify
-    # 2026-07-02, ADR-008a). Decimal(str(v)) puts both sides in decimal space: 2.4 == 2.40 -> PASS,
-    # matching the old float-to-float semantics at the bar.
     if h is not None:
         data.add((_SPACE_NODE, graph.ACC.heightM,
                   _RdfLiteral(Decimal(str(float(h))), datatype=_XSD.decimal)))
     if occ != "accessory" and aero_ratio is not None:
         data.add((_SPACE_NODE, graph.ACC.aeroRatio,
                   _RdfLiteral(Decimal(str(float(aero_ratio))), datatype=_XSD.decimal)))
-
-    _, report, _ = pyshacl.validate(data, shacl_graph=_shacl_shapes(thr))
-
-    comps = {"height": [], "aero": []}
-    path_msgs = {"height": [], "aero": []}
-    for res in report.subjects(_RDF.type, _SH.ValidationResult):
-        rpath = report.value(res, _SH.resultPath)
-        comp = report.value(res, _SH.sourceConstraintComponent)
-        if rpath == graph.ACC.heightM:
-            slot = "height"
-        elif rpath == graph.ACC.aeroRatio:
-            slot = "aero"
-        else:                                    # an unmodeled result = a shapes/materializer bug
-            raise RuntimeError(f"unexpected SHACL result path {rpath!r} (fail-closed)")
-        comps[slot].append(comp)
-        msg = report.value(res, _SH.resultMessage)
-        if msg is not None and comp == _SH.MinInclusiveConstraintComponent:
-            path_msgs[slot].append(str(msg))
-
-    def _tri(comp_list, unbounded=False):
-        """MinCount-dominant ternary mapping (blueprint §3.5)."""
-        if not comp_list:
-            return True
-        if _SH.MinCountConstraintComponent in comp_list:
-            return None                          # measurement absent -> UNDETERMINED
-        if all(c == _SH.MinInclusiveConstraintComponent for c in comp_list):
-            return None if unbounded else False  # unbounded ratio can't prove a violation (L-2)
-        raise RuntimeError(f"unexpected SHACL constraint components {comp_list} (fail-closed)")
-
-    height_ok = _tri(comps["height"])
-    aero_ok = None if occ == "accessory" else _tri(comps["aero"], unbounded=aero_unbounded)
-    msgs = (path_msgs["height"] if height_ok is False else []) + \
-           (path_msgs["aero"] if aero_ok is False else [])
-    return height_ok, aero_ok, msgs
+    return data
 
 
-def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> SpaceFinding:
+def _shacl_verdict(occ: str, salva_swap: bool, h, aero_ratio, aero_unbounded: bool,
+                   thr: "Thresholds", ttl_path: "Optional[str]" = None, timer=None):
+    """Materialize one space (extractor side) and hand it to the Rule Orchestrator (rules side).
+    Returns ``(height_ok, aero_ok, violation_messages)`` — each verdict tri-valued."""
+    t0 = time.perf_counter()
+    data = materialize_space_abox(occ, salva_swap, h, aero_ratio)
+    if timer is not None:
+        timer.add("graph_construction_s", time.perf_counter() - t0)
+    _, report = orchestrator.validate_abox(data, thr, ttl_path=ttl_path, timer=timer)
+    rows = orchestrator.parse_report(report)
+    return orchestrator.verdicts_from_report(rows, occ, aero_unbounded)
+
+
+def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds",
+                ttl_path: "Optional[str]" = None, timer=None) -> SpaceFinding:
+    t_extract = time.perf_counter()
     table = _applicability()
     occ = classify(space)
     h = space_height(space, scale)
@@ -681,9 +585,11 @@ def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> Spa
         finding.aero_ratio = round(win_trust / area, 4)
         aero_ratio_raw = win_trust / area
 
+    if timer is not None:
+        timer.add("ifc_extraction_s", time.perf_counter() - t_extract)
     height_ok, aero_ok, shacl_msgs = _shacl_verdict(
         occ, salva_casa and table.salva_casa_swaps_non_accessory,
-        h, aero_ratio_raw, untrust_present, thr)
+        h, aero_ratio_raw, untrust_present, thr, ttl_path=ttl_path, timer=timer)
     finding.height_ok = height_ok
     finding.aero_ok = aero_ok
     for msg in shacl_msgs:                       # sh:resultMessage per failed legal check
@@ -860,15 +766,23 @@ def length_scale_to_m(model) -> float:
     return uu.calculate_unit_scale(model)
 
 
-def run(path: str, salva_casa: bool = False, thr: Optional["Thresholds"] = None) -> dict:
+def run(path: str, salva_casa: bool = False, thr: Optional["Thresholds"] = None, *,
+        ttl_path: Optional[str] = None, timer=None) -> dict:
     thr = thr or Thresholds()
+    t0 = time.perf_counter()
     model = ifcopenshell.open(path)
     scale = length_scale_to_m(model)  # project length unit -> metres; RAISES if no LENGTHUNIT (C-2)
-    findings = [check_space(s, scale, salva_casa, thr) for s in model.by_type("IfcSpace")]
+    if timer is not None:
+        timer.add("ifc_extraction_s", time.perf_counter() - t0)
+    findings = [check_space(s, scale, salva_casa, thr, ttl_path=ttl_path, timer=timer)
+                for s in model.by_type("IfcSpace")]
     # Stage 4b: materialize the rooms into a per-run store each run (the room-in-store proof). The
     # verdict already flowed through the ontology query in classify(); this is the architectural
     # materialization — its node set is asserted GlobalId-exact by test_graph, surfaced as a count.
+    t1 = time.perf_counter()
     ifcspace_store = materialize_ifcspaces(model, scale)
+    if timer is not None:
+        timer.add("graph_construction_s", time.perf_counter() - t1)
     serialized = []
     for f in findings:
         record = asdict(f)
