@@ -62,13 +62,16 @@ _THRESHOLD_SLOTS = (
 TARGET_CLASSES = ("AccessorySpace", "HabitableBaselineSpace", "HabitableSalvaCasaSpace")
 
 
-def load_shacl_shapes(thr, path: "Optional[str]" = None) -> Graph:
+def load_shacl_shapes(thr, path: Optional[str] = None) -> Graph:
     """Load + validate + parameterize the SHACL shapes graph. FAIL-CLOSED (mirrors
     checker.load_applicability): every guard below exists because its absence was a proven silent
     failure mode — see the module docstring and ADR-008/008a."""
     path = path or DEFAULT_SHACL_PATH
     g = Graph()
-    g.parse(path, format="turtle")               # FileNotFoundError / parse error -> fail-closed
+    # Explicit context manager (freeze-review V3): rdflib manages the handle internally when given a
+    # path, but an explicit with-open guarantees deterministic release during batch execution.
+    with open(path, "rb") as fh:                 # FileNotFoundError -> fail-closed
+        g.parse(fh, format="turtle")             # parse error -> fail-closed
     targeted = set(g.objects(None, SH.targetClass))
     expected = {_accgraph.ACC[c] for c in TARGET_CLASSES}
     if not expected <= targeted:
@@ -94,7 +97,7 @@ def load_shacl_shapes(thr, path: "Optional[str]" = None) -> Graph:
     return g
 
 
-def shapes_for(thr, path: "Optional[str]" = None) -> Graph:
+def shapes_for(thr, path: Optional[str] = None) -> Graph:
     """Cached, parameterized shapes. The key includes the RESOLVED .ttl path (the regulatory file
     is dynamic) AND the four threshold values (two rule-sets must never share shapes)."""
     p = os.path.abspath(path or DEFAULT_SHACL_PATH)
@@ -105,8 +108,8 @@ def shapes_for(thr, path: "Optional[str]" = None) -> Graph:
     return _SHAPES_CACHE[key]
 
 
-def validate_abox(data_graph: Graph, thr, ttl_path: "Optional[str]" = None,
-                  timer: "Optional[PhaseTimer]" = None):
+def validate_abox(data_graph: Graph, thr, ttl_path: Optional[str] = None,
+                  timer: Optional[PhaseTimer] = None):
     """Fire pyshacl over the A-Box against the (cached) parameterized shapes.
     Returns ``(conforms, report_graph)``. Any pyshacl error propagates (fail-closed)."""
     import pyshacl                               # heavy import, deferred; cached in sys.modules
@@ -197,7 +200,7 @@ class ComplianceOrchestrator:
     shacl_validation_s). Extraction + materialization are delegated to checker.py (the feature
     extractor); this class owns rule selection and the benchmark."""
 
-    def __init__(self, ifc_path: str, ttl_path: "Optional[str]" = None,
+    def __init__(self, ifc_path: str, ttl_path: Optional[str] = None,
                  salva_casa: bool = False, thr=None):
         self.ifc_path = ifc_path
         self.ttl_path = ttl_path
