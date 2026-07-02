@@ -219,12 +219,58 @@ def test_c2_classified_exit() -> None:
     _check("c2_classified_exit_code_2", rc == 2)
 
 
+# ----------------------------------- Stage 5 (ADR-008/008a): SHACL verdict-path fail-closed
+def test_shacl_fail_closed() -> None:
+    import re
+    import tempfile
+    thr = C.Thresholds()
+    # (1) exact-at-bar datatype parity (ADR-008a): a room at EXACTLY the bar passes — float(2.4)
+    # materialized as xsd:double compared below Decimal('2.4') and flipped PASS->VIOLATION; the
+    # Decimal(str(v)) materialization restores the old at-the-bar semantics.
+    _check("shacl_exact_240_accessory_passes",
+           C._shacl_verdict("accessory", False, 2.40, None, False, thr)[0] is True)
+    _check("shacl_exact_270_habitable_passes",
+           C._shacl_verdict("habitable", False, 2.70, 0.140, False, thr)[0] is True)
+    _check("shacl_exact_0125_aero_passes",
+           C._shacl_verdict("habitable", False, 2.80, 0.125, False, thr)[1] is True)
+    _check("shacl_below_bar_still_violates",
+           C._shacl_verdict("habitable", False, 2.69, 0.140, False, thr)[0] is False)
+    # (2) minCount loader guard (ADR-008a): a shapes file stripped of sh:minCount would demote an
+    # ABSENT measurement from UNDETERMINED to a vacuous PASS — the loader must REFUSE it.
+    ttl = Path(C._SHACL_PATH).read_text(encoding="utf-8")
+    mutated = re.sub(r"\s*sh:minCount 1 ;.*\n", "\n", ttl)
+    p = Path(tempfile.mkdtemp()) / "no_mincount.ttl"
+    p.write_text(mutated, encoding="utf-8")
+    _check("shacl_mincount_stripped_ttl_refused",
+           _raises(lambda: C.load_shacl_shapes(thr, path=str(p)), ValueError))
+    # also: a shapes file missing a targeted class must refuse (anti-vacuous-conformance).
+    mutated2 = ttl.replace("sh:targetClass acc:AccessorySpace", "sh:targetClass acc:SomethingElse")
+    p2 = Path(tempfile.mkdtemp()) / "untargeted.ttl"
+    p2.write_text(mutated2, encoding="utf-8")
+    _check("shacl_untargeted_class_refused",
+           _raises(lambda: C.load_shacl_shapes(thr, path=str(p2)), ValueError))
+    # (3) defense-in-depth: a non-finite measurement reaching materialization RAISES (the post-pass
+    # maps no-result -> True, so an uncomparable literal would otherwise fail OPEN).
+    _check("shacl_nonfinite_height_raises",
+           _raises(lambda: C._shacl_verdict("habitable", False, float("inf"), 0.140, False, thr),
+                   ValueError))
+    _check("shacl_nonfinite_ratio_raises",
+           _raises(lambda: C._shacl_verdict("habitable", False, 2.8, float("nan"), False, thr),
+                   ValueError))
+    # ternary keystone through SHACL: absent measurements stay UNDETERMINED, never a pass.
+    _check("shacl_missing_height_undetermined",
+           C._shacl_verdict("habitable", False, None, 0.140, False, thr)[0] is None)
+    _check("shacl_missing_ratio_undetermined",
+           C._shacl_verdict("habitable", False, 2.8, None, False, thr)[1] is None)
+
+
 def main() -> int:
     test_window_area_positivity()
     test_quantity_positivity()
     test_length_unit_fail_closed()
     test_zero_space_not_certifiable()
     test_c2_classified_exit()
+    test_shacl_fail_closed()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

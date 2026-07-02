@@ -517,6 +517,15 @@ def load_shacl_shapes(thr: "Thresholds", path: "Optional[str]" = None) -> "_RdfG
         if g.value(ps, _SH.minInclusive) is None:
             raise ValueError(f"SHACL shapes {path!r}: {ps_name} has no sh:minInclusive slot "
                              f"(fail-closed — refusing an unparameterized legal bar)")
+        # sh:minCount is THE load-bearing fail-closed construct: it is the only thing that turns an
+        # ABSENT measurement (the materializer omits unmeasurable values) into UNDETERMINED instead
+        # of a vacuous PASS (the post-pass maps no-result -> True). A shapes file without it would
+        # silently demote undetermined -> pass (adversarial-verify 2026-07-02, ADR-008a) — refuse it.
+        mc = g.value(ps, _SH.minCount)
+        if mc is None or int(mc) < 1:
+            raise ValueError(f"SHACL shapes {path!r}: {ps_name} has no sh:minCount >= 1 — the "
+                             f"fail-closed UNDETERMINED construct is missing (an absent measurement "
+                             f"would read as PASS); refusing (fail-closed)")
         val = getattr(thr, thr_attr)             # resolves via the record model; raises if absent
         g.set((ps, _SH.minInclusive, _RdfLiteral(Decimal(str(val)), datatype=_XSD.decimal)))
         # message parameterized WITH the value: an overridden bar (e.g. an edited-law recompile)
@@ -551,13 +560,28 @@ def _shacl_verdict(occ: str, salva_swap: bool, h, aero_ratio, aero_unbounded: bo
     else:
         cls = graph.ACC.HabitableBaselineSpace
 
+    # Defense-in-depth: extraction (P0) already rejects non-finite values, but the post-pass maps
+    # no-result -> True, so an uncomparable literal slipping through would fail OPEN. Never trust
+    # the upstream alone at a fail-open boundary — raise here (adversarial-verify 2026-07-02).
+    if h is not None and not math.isfinite(float(h)):
+        raise ValueError(f"_shacl_verdict: non-finite height {h!r} reached materialization (fail-closed)")
+    if aero_ratio is not None and not math.isfinite(float(aero_ratio)):
+        raise ValueError(f"_shacl_verdict: non-finite aero ratio {aero_ratio!r} reached "
+                         f"materialization (fail-closed)")
+
     data = _RdfGraph()
     data.add((_SPACE_NODE, _RDF.type, cls))
+    # Measurements are materialized as xsd:decimal via the float's SHORTEST ROUND-TRIP repr, NOT as
+    # xsd:double: float(2.4) is stored below the exact decimal 2.4, so a double-vs-decimal compare
+    # flipped a genuinely-2.40 m room PASS -> VIOLATION at the exact bar (adversarial-verify
+    # 2026-07-02, ADR-008a). Decimal(str(v)) puts both sides in decimal space: 2.4 == 2.40 -> PASS,
+    # matching the old float-to-float semantics at the bar.
     if h is not None:
-        data.add((_SPACE_NODE, graph.ACC.heightM, _RdfLiteral(float(h), datatype=_XSD.double)))
+        data.add((_SPACE_NODE, graph.ACC.heightM,
+                  _RdfLiteral(Decimal(str(float(h))), datatype=_XSD.decimal)))
     if occ != "accessory" and aero_ratio is not None:
         data.add((_SPACE_NODE, graph.ACC.aeroRatio,
-                  _RdfLiteral(float(aero_ratio), datatype=_XSD.double)))
+                  _RdfLiteral(Decimal(str(float(aero_ratio))), datatype=_XSD.decimal)))
 
     _, report, _ = pyshacl.validate(data, shacl_graph=_shacl_shapes(thr))
 
