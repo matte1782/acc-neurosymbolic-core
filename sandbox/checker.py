@@ -43,6 +43,19 @@ except ImportError as exc:  # pragma: no cover - environment guard
 # (one-directional: checker -> graph), so there is no cycle.
 import graph  # noqa: E402
 
+# Stage 5 (ADR-008) — the LEGAL COMPARISON layer is declarative: check_space materializes each
+# space's extracted facts into an in-memory rdflib A-Box and validates it against the SHACL shapes
+# in ontology/dm1975_salvacasa.ttl via pyshacl. EXTRACTION math (the P0 fixes: positivity,
+# unit resolvability, trustworthy-window F-C/L-2) stays in Python and runs BEFORE materialization.
+from decimal import Decimal  # noqa: E402
+
+from rdflib import Graph as _RdfGraph, Literal as _RdfLiteral, Namespace as _RdfNamespace  # noqa: E402
+from rdflib import RDF as _RDF, URIRef as _URIRef  # noqa: E402
+from rdflib.namespace import XSD as _XSD  # noqa: E402
+
+_SH = _RdfNamespace("http://www.w3.org/ns/shacl#")
+_LEGAL = _RdfNamespace("https://acc.local/legal#")
+
 # --- Verified thresholds (rules/dm_1975_salva_casa.md) ---------------------------------
 MIN_HEIGHT_HABITABLE_M = 2.70   # DM 5/7/1975 art. 1
 MIN_HEIGHT_ACCESSORY_M = 2.40   # corridoi, disimpegni, bagni, ripostigli
@@ -450,6 +463,137 @@ def serving_windows(space):
             and getattr(rel, "RelatedBuildingElement").is_a("IfcWindow")]
 
 
+# --- Stage 5: declarative SHACL evaluation of the LEGAL comparison layer (ADR-008) -------------
+# ontology/dm1975_salvacasa.ttl carries the DM-1975 / Salva-Casa rules as sh:NodeShape/
+# sh:PropertyShape. check_space materializes each space's EXTRACTED facts (P0 math untouched,
+# runs first) into a tiny A-Box and pyshacl-validates it; the ValidationReport is parsed back into
+# the tri-valued height_ok/aero_ok via the MinCount-dominant post-pass (blueprint §3.5):
+#   MinCount result (measurement ABSENT — the materializer omitted an unmeasurable value, never a
+#   laundered 0.0)                               -> None  (UNDETERMINED)
+#   MinInclusive result (present-but-below)      -> False (VIOLATION) — for aero, remapped to None
+#     when the ratio was UNBOUNDED (an untrustworthy window present, C-1b L-2)
+#   no result                                    -> True  (PASS)
+# Fail-closed: a missing/empty/mis-targeted shapes file RAISES at load (anti-vacuous-conformance
+# guard); an unexpected result path/constraint component RAISES (never silently mapped).
+_SHACL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "ontology", "dm1975_salvacasa.ttl")
+_SHACL_CACHE: dict = {}          # (h_hab, h_acc, h_sc, aero) -> parameterized shapes Graph
+_SPACE_NODE = _URIRef("urn:acc:eval:space")   # the single-space A-Box focus node
+
+# The four stable property-shape URIs the loader re-parameterizes from Thresholds — so the
+# gate-verified compiled JSON stays the numeric source of truth (Stage-1 dynamic coupling: edit the
+# law -> recompile -> the shapes carry the new number, no .py and no .ttl edit).
+_SHACL_THRESHOLD_SLOTS = (
+    # (property-shape local name, Thresholds attribute, sh:message template — the message is
+    #  re-generated WITH the value so an overridden threshold never reports a stale number)
+    ("MinHeightHabitable_PS", "min_height_habitable_m",
+     "height below the {v} m habitable minimum (DM 1975 art.1)"),
+    ("MinHeightAccessory_PS", "min_height_accessory_m",
+     "height below the {v} m accessory minimum (DM 1975 art.1)"),
+    ("MinHeightSalvaCasa_PS", "min_height_salva_casa_m",
+     "height below the {v} m Salva-Casa derogated minimum (DPR 380/2001 art.24 c.5-bis)"),
+    ("MinAeroRatio_PS", "aero_illuminating_ratio",
+     "aero-illuminating ratio below the {v} (1/8) floor-area minimum (DM 1975 art.5)"),
+)
+_SHACL_TARGET_CLASSES = ("AccessorySpace", "HabitableBaselineSpace", "HabitableSalvaCasaSpace")
+
+
+def load_shacl_shapes(thr: "Thresholds", path: "Optional[str]" = None) -> "_RdfGraph":
+    """Load + validate + parameterize the SHACL shapes graph. FAIL-CLOSED (mirrors
+    load_applicability): a missing/unparseable file raises; a shapes graph that does not target all
+    three materialization classes raises (a mis-targeted shape set would conform VACUOUSLY — a
+    silent pass); a missing threshold slot raises (never a silently unparameterized bar)."""
+    path = path or _SHACL_PATH
+    g = _RdfGraph()
+    g.parse(path, format="turtle")               # FileNotFoundError / parse error -> fail-closed
+    targeted = set(g.objects(None, _SH.targetClass))
+    expected = {graph.ACC[c] for c in _SHACL_TARGET_CLASSES}
+    if not expected <= targeted:
+        raise ValueError(f"SHACL shapes {path!r}: missing sh:targetClass for "
+                         f"{sorted(str(c) for c in expected - targeted)} — a space materialized "
+                         f"under an untargeted class would conform vacuously (fail-closed)")
+    for ps_name, thr_attr, msg_tmpl in _SHACL_THRESHOLD_SLOTS:
+        ps = _LEGAL[ps_name]
+        if g.value(ps, _SH.minInclusive) is None:
+            raise ValueError(f"SHACL shapes {path!r}: {ps_name} has no sh:minInclusive slot "
+                             f"(fail-closed — refusing an unparameterized legal bar)")
+        val = getattr(thr, thr_attr)             # resolves via the record model; raises if absent
+        g.set((ps, _SH.minInclusive, _RdfLiteral(Decimal(str(val)), datatype=_XSD.decimal)))
+        # message parameterized WITH the value: an overridden bar (e.g. an edited-law recompile)
+        # must never emit a message asserting the stale default number.
+        g.set((ps, _SH.message, _RdfLiteral(msg_tmpl.format(v=val))))
+    return g
+
+
+def _shacl_shapes(thr: "Thresholds") -> "_RdfGraph":
+    key = (thr.min_height_habitable_m, thr.min_height_accessory_m,
+           thr.min_height_salva_casa_m, thr.aero_illuminating_ratio)
+    if key not in _SHACL_CACHE:
+        _SHACL_CACHE[key] = load_shacl_shapes(thr)
+    return _SHACL_CACHE[key]
+
+
+def _shacl_verdict(occ: str, salva_swap: bool, h, aero_ratio, aero_unbounded: bool,
+                   thr: "Thresholds"):
+    """Materialize one space's facts and SHACL-validate them. Returns
+    ``(height_ok, aero_ok, violation_messages)`` — each verdict tri-valued (True/False/None).
+
+    Materialization = projection of INPUT facts only: the target class encodes occupancy (from the
+    Stage-4b graph) + the Salva-Casa regime flag; ``h``/``aero_ratio`` are the extracted values
+    (None = unmeasurable -> triple OMITTED so sh:minCount fires UNDETERMINED). The legal
+    comparisons happen in the shapes, not here."""
+    import pyshacl  # heavy import, deferred; cached in sys.modules after first use
+
+    if occ == "accessory":
+        cls = graph.ACC.AccessorySpace
+    elif salva_swap:
+        cls = graph.ACC.HabitableSalvaCasaSpace
+    else:
+        cls = graph.ACC.HabitableBaselineSpace
+
+    data = _RdfGraph()
+    data.add((_SPACE_NODE, _RDF.type, cls))
+    if h is not None:
+        data.add((_SPACE_NODE, graph.ACC.heightM, _RdfLiteral(float(h), datatype=_XSD.double)))
+    if occ != "accessory" and aero_ratio is not None:
+        data.add((_SPACE_NODE, graph.ACC.aeroRatio,
+                  _RdfLiteral(float(aero_ratio), datatype=_XSD.double)))
+
+    _, report, _ = pyshacl.validate(data, shacl_graph=_shacl_shapes(thr))
+
+    comps = {"height": [], "aero": []}
+    path_msgs = {"height": [], "aero": []}
+    for res in report.subjects(_RDF.type, _SH.ValidationResult):
+        rpath = report.value(res, _SH.resultPath)
+        comp = report.value(res, _SH.sourceConstraintComponent)
+        if rpath == graph.ACC.heightM:
+            slot = "height"
+        elif rpath == graph.ACC.aeroRatio:
+            slot = "aero"
+        else:                                    # an unmodeled result = a shapes/materializer bug
+            raise RuntimeError(f"unexpected SHACL result path {rpath!r} (fail-closed)")
+        comps[slot].append(comp)
+        msg = report.value(res, _SH.resultMessage)
+        if msg is not None and comp == _SH.MinInclusiveConstraintComponent:
+            path_msgs[slot].append(str(msg))
+
+    def _tri(comp_list, unbounded=False):
+        """MinCount-dominant ternary mapping (blueprint §3.5)."""
+        if not comp_list:
+            return True
+        if _SH.MinCountConstraintComponent in comp_list:
+            return None                          # measurement absent -> UNDETERMINED
+        if all(c == _SH.MinInclusiveConstraintComponent for c in comp_list):
+            return None if unbounded else False  # unbounded ratio can't prove a violation (L-2)
+        raise RuntimeError(f"unexpected SHACL constraint components {comp_list} (fail-closed)")
+
+    height_ok = _tri(comps["height"])
+    aero_ok = None if occ == "accessory" else _tri(comps["aero"], unbounded=aero_unbounded)
+    msgs = (path_msgs["height"] if height_ok is False else []) + \
+           (path_msgs["aero"] if aero_ok is False else [])
+    return height_ok, aero_ok, msgs
+
+
 def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> SpaceFinding:
     table = _applicability()
     occ = classify(space)
@@ -488,49 +632,53 @@ def check_space(space, scale: float, salva_casa: bool, thr: "Thresholds") -> Spa
         aero_ok=None,
     )
 
-    if h is not None:
-        finding.height_ok = h + 1e-6 >= required
-    else:
-        finding.notes.append("no Qto_SpaceBaseQuantities.Height — geometry fallback needed")
-
-    # The 1/8 aero-illuminating ratio (DM 1975 art. 5) applies to habitable rooms; accessory
-    # spaces (bagni, ripostigli, corridoi) follow separate ventilation rules — skip R2 there.
-    if not aero_applies:
-        finding.notes.append("aero ratio N/A for accessory room (separate ventilation rules)")
-    elif area and area > 0:                                # area>0 defends a latent negative-floor path
-        # C-1b trustworthy-window aero semantics (F-C plausibility + L-2 lower bound; ADR-003,
-        # DECISION_MATRIX §C-1b). A serving window is UNTRUSTWORTHY if unmeasurable (None) or its area
-        # exceeds the floor it serves (ratio > 1 is non-physical for openable glazing — no magic
-        # constant; the room's own floor is the scale). The aero numerator ALWAYS uses the
-        # CONSERVATIVE min(attr, Qto) lower bound, NEVER the attr-preferring window_area: an inflated
-        # bounding-box attr that is still <= floor would otherwise pass F-C as 'trustworthy' yet
-        # fabricate area the Qto net glazing contradicts -> a false compliant pass (adversarial-verify
-        # 2026-06-30, ADR-007c; an earlier byte-identical refinement narrowed the conservative numerator
-        # to the untrust branch only and reopened this). An untrustworthy window is never laundered to 0.0.
+    # ---- Stage 5 (ADR-008): DECLARATIVE legal evaluation ---------------------------------------
+    # Everything above this line is EXTRACTION (P0 math + applicability, untouched). Below, the
+    # C-1b TRUST decision also stays in Python (it is a measurement-trust question, not law); the
+    # LEGAL comparisons (2.70 / 2.40 / 1/8) are SHACL shapes in ontology/dm1975_salvacasa.ttl,
+    # parameterized from thr (the gate-verified numbers) and validated per space via pyshacl.
+    aero_ratio_raw = None
+    untrust_present = False
+    win_trust = 0.0
+    if aero_applies and area and area > 0:                 # area>0 defends a latent negative-floor path
+        # C-1b trustworthy-window semantics (F-C plausibility + L-2 lower bound; ADR-007b/c). A
+        # serving window is UNTRUSTWORTHY if unmeasurable (None) or larger than the floor it serves
+        # (non-physical for openable glazing — the room's own floor is the scale, no magic constant).
+        # The numerator is ALWAYS the CONSERVATIVE min(attr, Qto) lower bound — an inflated
+        # bounding-box attr <= floor would otherwise fabricate area its Qto contradicts (the
+        # ADR-007c bypass). The materialized acc:aeroRatio therefore carries a TRUE LOWER BOUND:
+        # >= bar proves a pass even with an untrustworthy window present (L-2); < bar with an
+        # untrustworthy window present is remapped to UNDETERMINED in the post-pass (the real ratio
+        # might be higher). An untrustworthy window is never laundered to 0.0. When area itself is
+        # unmeasurable the triple is OMITTED so sh:minCount fires UNDETERMINED.
         untrust_present = any(pref is None or pref > area for pref, _ in wdata)
         win_trust = sum(cons for pref, cons in wdata if pref is not None and pref <= area)
         finding.window_area_m2 = round(win_trust, 3)
         finding.aero_ratio = round(win_trust / area, 4)
-        clears = (win_trust / area) + 1e-9 >= thr.aero_illuminating_ratio
-        if clears:
-            # the trustworthy windows' conservative lower bound already clears 1/8 -> PASS (a true
-            # lower bound, so an also-present untrustworthy window cannot turn a pass into a fail).
-            finding.aero_ok = True
-            if untrust_present:
-                finding.notes.append("aero passes on trustworthy windows alone (conservative lower "
-                                     "bound); untrustworthy window area ignored")
-        elif untrust_present:
-            # the ratio cannot be bounded (an untrustworthy window might or might not lift it past 1/8)
-            # -> UNDETERMINED, never a laundered pass or a guessed fail. SpaceFinding.compliant turns
-            # aero_ok=None into compliant=None (the keystone — untouched).
-            finding.aero_ok = None
+        aero_ratio_raw = win_trust / area
+
+    height_ok, aero_ok, shacl_msgs = _shacl_verdict(
+        occ, salva_casa and table.salva_casa_swaps_non_accessory,
+        h, aero_ratio_raw, untrust_present, thr)
+    finding.height_ok = height_ok
+    finding.aero_ok = aero_ok
+    for msg in shacl_msgs:                       # sh:resultMessage per failed legal check
+        finding.notes.append(f"SHACL: {msg}")
+
+    # Diagnostics — same conditions and messages as the procedural version (notes, not verdicts).
+    if h is None:
+        finding.notes.append("no Qto_SpaceBaseQuantities.Height — geometry fallback needed")
+    if not aero_applies:
+        finding.notes.append("aero ratio N/A for accessory room (separate ventilation rules)")
+    elif area and area > 0:
+        if aero_ok is True and untrust_present:
+            finding.notes.append("aero passes on trustworthy windows alone (conservative lower "
+                                 "bound); untrustworthy window area ignored")
+        elif aero_ok is None and untrust_present:
             finding.notes.append("untrustworthy serving-window area (unmeasurable or larger than the "
                                  "floor) — aero ratio cannot be bounded; undetermined (ADR-003)")
-        else:
-            # all windows trustworthy and the conservative bar is not cleared -> genuine violation.
-            finding.aero_ok = False
-            if win_trust == 0.0:
-                finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
+        elif aero_ok is False and win_trust == 0.0:
+            finding.notes.append("no window via IfcRelSpaceBoundary — aero ratio may be understated")
     else:
         finding.notes.append("no NetFloorArea — cannot evaluate aero ratio")
 

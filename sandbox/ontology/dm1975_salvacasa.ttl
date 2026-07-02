@@ -1,0 +1,117 @@
+# ============================================================================================
+# Stage 5 — declarative habitability rules: DM 5/7/1975 + Salva Casa (DL 69/2024 / DPR 380/2001
+# art. 24 commi 5-bis/5-ter) as SHACL shapes over the acc: building A-Box.
+#
+# DESIGN CONTRACT (research/ONTOLOGY_UPGRADE_BLUEPRINT.md §3, ADR-008):
+# * The checker's EXTRACTION math (P0 fixes: positivity, unit resolvability, trustworthy-window
+#   F-C/L-2) stays in Python — this file evaluates only the LEGAL comparison layer.
+# * TERNARY verdicts survive the open-world trap by construction:
+#     - a MISSING measurement fires sh:minCount (MinCountConstraintComponent)  -> UNDETERMINED
+#     - a PRESENT-but-below value fires sh:minInclusive                        -> VIOLATION
+#       (for aero: VIOLATION only if the ratio was BOUNDED — acc:aeroUnbounded true remaps the
+#        minInclusive result to UNDETERMINED in the MinCount-dominant post-pass, per C-1b/L-2)
+#     - no result                                                              -> PASS
+#   The materializer NEVER writes a laundered 0.0 for an unmeasurable quantity; it omits the
+#   triple so minCount fires (fail-closed). A path-mismatch bug therefore fails to UNDETERMINED,
+#   never to a silent pass.
+# * The numeric literals below are the STATUTE DEFAULTS. At runtime checker.py re-parameterizes
+#   sh:minInclusive on the four stable *_PS property-shape URIs from the gate-verified Thresholds
+#   (compiled-rule JSON), preserving Stage-1 dynamic coupling: edit the law -> recompile -> the
+#   shapes carry the new number, no .py edit. The values' trust chain is the verify-never-trust
+#   gate, exactly as before — this file is a projection, not a second source of truth.
+# * sh:targetClass selection encodes WHICH regime applies (an input fact: occupancy class from the
+#   Stage-4b graph + the --salva-casa regime flag), not an evaluation. 'unknown' occupancy is
+#   evaluated exactly like habitable (strict-complement rule, Institute 402/403 canary).
+# * Epsilon note: Python used h+1e-6 / ratio+1e-9 float crutches; SHACL compares exactly. Proven
+#   verdict-identical on all fixtures + the 220-row oracle (epsilon-parity probe, 2026-07-02:
+#   0 divergent values in the tolerance band).
+# ============================================================================================
+
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acc:   <https://acc.local/ontology#> .
+@prefix legal: <https://acc.local/legal#> .
+
+# --------------------------------------------------------------------------------------------
+# T-Box: evaluated-space classes (A-Box materialization targets — one per space)
+# --------------------------------------------------------------------------------------------
+acc:EvaluatedSpace a rdfs:Class ;
+    rdfs:comment "An IfcSpace materialized for legal evaluation (name, occupancy, measurements)." .
+
+acc:AccessorySpace a rdfs:Class ;
+    rdfs:subClassOf acc:EvaluatedSpace ;
+    rdfs:comment "Accessory room (corridoi, disimpegni, bagni, gabinetti, ripostigli — DM 1975 art.1): lower 2.40 m bar; the 1/8 aero-illuminating rule does NOT apply (separate ventilation rules)." .
+
+acc:HabitableBaselineSpace a rdfs:Class ;
+    rdfs:subClassOf acc:EvaluatedSpace ;
+    rdfs:comment "Habitable (or unknown = strict complement, evaluated as habitable) under the ordinary DM 1975 regime: 2.70 m + aero 1/8." .
+
+acc:HabitableSalvaCasaSpace a rdfs:Class ;
+    rdfs:subClassOf acc:EvaluatedSpace ;
+    rdfs:comment "Habitable (or unknown) under the Salva Casa derogation (DL 69/2024 conv. L 105/2024; DPR 380/2001 art.24 c.5-bis, cumulative-AND conditions of c.5-ter asserted by the operator via --salva-casa): height bar derogated to 2.40 m; aero 1/8 unchanged." .
+
+# --------------------------------------------------------------------------------------------
+# T-Box: normative provisions (provenance anchors; the gate-emission of content-addressed
+# verification nodes is blueprint Phase-0 — until then these are documentary anchors)
+# --------------------------------------------------------------------------------------------
+legal:NormativeProvision a rdfs:Class .
+
+legal:DM_1975_Abitabilita a legal:NormativeProvision ;
+    rdfs:label "D.M. 5 luglio 1975 (altezze minime e requisiti igienico-sanitari)" .
+
+legal:DPR380_art24_SalvaCasa a legal:NormativeProvision ;
+    rdfs:label "DPR 380/2001 art. 24 commi 5-bis/5-ter (Salva Casa, DL 69/2024 conv. L 105/2024)" .
+
+# --------------------------------------------------------------------------------------------
+# Property shapes — STABLE URIs (checker.py re-parameterizes sh:minInclusive from Thresholds)
+# --------------------------------------------------------------------------------------------
+legal:MinHeightHabitable_PS a sh:PropertyShape ;
+    sh:path acc:heightM ;
+    sh:minCount 1 ;                       # missing net height -> UNDETERMINED (post-pass)
+    sh:maxCount 1 ;
+    sh:minInclusive 2.70 ;                # DM 1975 art.1: "fissata in m 2,70"
+    sh:message "height below the 2.70 m habitable minimum (DM 1975 art.1)" ;
+    rdfs:seeAlso legal:DM_1975_Abitabilita .
+
+legal:MinHeightAccessory_PS a sh:PropertyShape ;
+    sh:path acc:heightM ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:minInclusive 2.40 ;                # DM 1975 art.1: "riducibile a m 2,40" (accessory rooms)
+    sh:message "height below the 2.40 m accessory minimum (DM 1975 art.1)" ;
+    rdfs:seeAlso legal:DM_1975_Abitabilita .
+
+legal:MinHeightSalvaCasa_PS a sh:PropertyShape ;
+    sh:path acc:heightM ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:minInclusive 2.40 ;                # DPR 380 art.24 c.5-bis: minimum internal height 2,40 m
+    sh:message "height below the 2.40 m Salva-Casa derogated minimum (DPR 380/2001 art.24 c.5-bis)" ;
+    rdfs:seeAlso legal:DPR380_art24_SalvaCasa .
+
+legal:MinAeroRatio_PS a sh:PropertyShape ;
+    sh:path acc:aeroRatio ;
+    sh:minCount 1 ;                       # unmeasurable/unbounded ratio (triple omitted) -> UNDETERMINED
+    sh:maxCount 1 ;
+    sh:minInclusive 0.125 ;               # DM 1975 art.5: 1/8 della superficie del pavimento
+    sh:message "aero-illuminating ratio below 1/8 of floor area (DM 1975 art.5)" ;
+    rdfs:seeAlso legal:DM_1975_Abitabilita .
+
+# --------------------------------------------------------------------------------------------
+# Node shapes — regime selection via sh:targetClass (an input fact, not an evaluation)
+# --------------------------------------------------------------------------------------------
+legal:AccessoryShape a sh:NodeShape ;
+    sh:targetClass acc:AccessorySpace ;
+    sh:property legal:MinHeightAccessory_PS .
+    # NO aero property shape: the 1/8 rule does not apply to accessory rooms.
+
+legal:HabitableBaselineShape a sh:NodeShape ;
+    sh:targetClass acc:HabitableBaselineSpace ;
+    sh:property legal:MinHeightHabitable_PS ;
+    sh:property legal:MinAeroRatio_PS .
+
+legal:HabitableSalvaCasaShape a sh:NodeShape ;
+    sh:targetClass acc:HabitableSalvaCasaSpace ;
+    sh:property legal:MinHeightSalvaCasa_PS ;
+    sh:property legal:MinAeroRatio_PS .
