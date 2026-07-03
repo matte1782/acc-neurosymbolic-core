@@ -38,6 +38,9 @@ data/raw/
 sandbox/data/*_report*.json
 sandbox/probe_*.py
 
+# Track B gate-spike run reports (regenerable: python sandbox/gate_spike.py --live --report ...)
+sandbox/spike_report_*.json
+
 # Audit research: the adversarial corpus .ifc are covered by *.ifc above (regenerable via
 # research/corpus/gen_adversarial.py); the run output is regenerable too. The pinned
 # expected_verdicts.json (the external oracle) IS tracked.
