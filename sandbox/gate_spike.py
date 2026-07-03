@@ -19,14 +19,20 @@ WHAT THIS IS NOT
     for the full spike (strategy §3.2.5 step 4); this prototype implements the
     protocol layers and the meta-gate battery those pins will be replayed against.
 
-DECLARED RECALL DEBT (rejections route to triage BY DESIGN; red-teamed 2026-07-03)
-    - min_surface_monostanza_sc_2p (28 m², 2 persons) is unreachable by any faithful
-      span: the tight span has no direction marker, and any span wide enough to gain
-      one also gains the 20 m² value (SPAN_AMBIGUOUS). Triage-only until a
-      person-count-qualified direction context is added.
-    - Tight marker-less spans ('20 m² (1 person)') and the montani reduction
-      ('reduced to m 2,55' — correctly scope-less here) reject to triage.
-    Zero false accepts were constructible in the red-team round; precision > recall
+DECLARED RECALL DEBT (rejections route to triage BY DESIGN; red-teamed 2026-07-03,
+recall-tuned in the 37-pin replay round — see gate_replay.py)
+    - RESOLVED (host-sentence direction fallback): marker-less tight spans
+      ('20 m² (1 person)', '28 m² (2 persons)') now bind — direction is derived from
+      the anchor's host statute sentence, which the claimant cannot manipulate.
+    - RESOLVED (gloss-anchor tier): the corpus's verbatim English gloss lines bind
+      through GLOSS_ANCHORS, gated on value agreement with the primary Italian
+      anchor's corpus-unique value (a shadowed/deleted primary rejects the gloss too).
+    - REMAINING: true paraphrases (not verbatim anywhere in the corpus, e.g.
+      'not less than 0.125 of the floor area') reject at L1 and route to triage —
+      the §3.2.5 quotation layer carries them as never-load-bearing gloss alongside
+      a verbatim span; the montani reduction ('reduced to m 2,55') stays scope-less
+      and anchored to no key, by design.
+    Zero false accepts were constructible in either red-team round; precision > recall
     is the contract (strategy §3.2.5 step 3).
 
 PROTOCOL LAYERS (each claim must clear ALL of them — any miss REJECTS)
@@ -167,6 +173,43 @@ ANCHOR_UNIT = {
     "min_surface_monostanza_sc_1p": "m2", "min_surface_monostanza_sc_2p": "m2",
 }
 
+# --- GLOSS-ANCHOR TIER (37-pin replay upgrade; strategy §3.2.5 quotation layer) ---------
+# The corpus carries verbatim ENGLISH gloss lines for three thresholds; the historical
+# bilingual accepts (test_gate.py:165-181) bind through them. A gloss anchor is a SECOND
+# way to match L3 — never a second source of truth: a gloss-anchored claim must ALSO agree
+# with the PRIMARY (Italian statutory) anchor's corpus-unique value. Consequences that keep
+# precision intact: (a) if the primary anchor is decoy-shadowed (ambiguous) or deleted, the
+# gloss path rejects too; (b) an injected gloss look-alike with a different value makes the
+# gloss anchor corpus-ambiguous AND fails primary agreement — both reject. Gloss patterns
+# run over the NORMALIZED form (decimal commas unified), unlike the primary tier which
+# stays byte-equal to parser.py (the parity pin) and runs over the demarked form.
+# gloss_accessory is SCOPE-BOUND to its continuation ('for corridors'): the statute holds
+# 2.40 m under TWO legally distinct regimes (unconditional accessory vs conditional
+# Salva-Casa 5-bis), so a value-agreement check alone cannot disambiguate scope — the
+# red team showed a poisoned 'reducible to 2.40 m under Salva-Casa 5-ter' gloss would
+# otherwise bind the accessory key. Encoding the scope words in the pattern makes any
+# differently-scoped look-alike fall through to REJECT_NO_ANCHOR. Numerics are bounded
+# (max 2 decimals; 1-2 digit numerator) so '2.400' / '11/8' cannot slip a magnitude.
+GLOSS_ANCHORS = {
+    "gloss_habitable":  r"min net internal height\s*(\d+\.\d{1,2})\s*m\b",
+    "gloss_accessory":  r"reducible to\s*(\d+\.\d{1,2})\s*m for corridors",
+    "gloss_aero":       r"\b(\d{1,2})\s*/\s*(\d{1,3})\s*of the floor area",
+}
+GLOSS_TO_PRIMARY = {
+    "gloss_habitable": "min_height_habitable_m",
+    "gloss_accessory": "min_height_accessory_m",
+    "gloss_aero": "aero_illuminating_ratio",
+}
+GLOSS_UNIT = {"gloss_habitable": "m", "gloss_accessory": "m", "gloss_aero": "ratio"}
+
+
+def _gloss_values(text_norm: str, key: str) -> set:
+    """All distinct values a gloss anchor resolves to in normalized `text_norm`."""
+    found = re.findall(GLOSS_ANCHORS[key], text_norm, re.S | re.I)
+    if key == "gloss_aero":
+        return {int(a) / int(b) for a, b in found}
+    return {float(g) for g in found}
+
 
 def _anchor_values(text: str, key: str) -> set:
     """All distinct values an anchor resolves to in `text` (demarked form)."""
@@ -178,10 +221,14 @@ def _anchor_values(text: str, key: str) -> set:
 
 # --- L2: fixed, rule-agnostic span grammar for Italian legal numerics ------------------
 _DEROG_PAREN = re.compile(r"\((?:derogating|che deroga|in deroga)[^)]*\)", re.I)
+# NOTE: bare '\bmin\b' was red-teamed OUT (fires on minutes/abbreviation senses: '30 min',
+# 'min. 0,5 vol/h'); the English shorthand is honored only in its height-gloss context.
 _GE_PAT = re.compile(r"non\s+(?:potr[aà]'?\s+essere\s+)?inferiore|\balmeno\b|fissata\s+in"
-                     r"|\bminim[ao]\b|\bminimum\b|≥|>=", re.I)
+                     r"|\bminim[ao]\b|\bminimum\b|\bmin\b(?=\.?\s+(?:net|internal|height))"
+                     r"|≥|>=", re.I)
 _LE_PAT = re.compile(r"non\s+(?:potr[aà]'?\s+essere\s+)?superiore|\bmassim[ao]\b|\bmaximum\b|≤|<=", re.I)
-_DEROG_PAT = re.compile(r"riducibile\s+a|ridott[ao]\s+a|reduced\s+to|derogating|in\s+deroga", re.I)
+_DEROG_PAT = re.compile(r"riducibile\s+a|ridott[ao]\s+a|reduced\s+to|reducible\s+to"
+                        r"|derogating|in\s+deroga", re.I)
 
 _NUM_M = re.compile(r"\bm\s+(\d+\.\d+)|(\d+\.\d+)\s*m\b")          # heights (normalized text: 2.70)
 _NUM_M2 = re.compile(r"\bmq\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*m(?:²|2)\b")  # surfaces
@@ -201,15 +248,61 @@ def _canon_unit(unit: str) -> Optional[str]:
     return _UNIT_CANON.get((unit or "").strip().lower())
 
 
+_CONFLICT = "CONFLICT"
+
+
 def _span_direction(span_norm: str) -> Optional[str]:
-    """Closed operator lexicon over the span. Both directions or neither -> None (ambiguous)."""
+    """Closed operator lexicon over the span. Three states, kept distinct (a red-teamed
+    contract hole): neither marker -> None (may still resolve via the host chunk); BOTH
+    directions -> _CONFLICT (a self-contradictory span can never bind, host chunk or not)."""
     ge = bool(_GE_PAT.search(span_norm)) or bool(_DEROG_PAT.search(span_norm))
     le = bool(_LE_PAT.search(span_norm))
-    if ge and not le:
+    if ge and le:
+        return _CONFLICT
+    if ge:
         return ">="
-    if le and not ge:
+    if le:
         return "<="
     return None
+
+
+# Negated derogation/reduction phrasing ('never reducible to', 'non è riducibile a'):
+# polarity inversion the span-lexicon alone cannot see when the claimant truncates the
+# negator out of the span. Checked over the claimant-immutable HOST CHUNK. The legitimate
+# Italian GE idiom 'non potrà essere inferiore' is NOT matched (inferiore is not a
+# reduction stem).
+_NEG_DEROG = re.compile(
+    r"\b(?:never|not|mai|non)\s+(?:\w+\s+){0,2}?(?:riducibil|reducibl|ridott|reduc|derogat)\w*",
+    re.I)
+
+# Host-chunk boundaries in normalized text: ';', ':' and bullet separators ' - ' (a dot
+# between digits is a decimal, and abbreviation dots — 'incl.', 'art.' — would cut real
+# sentences; the bullet boundary stops an adjacent provision's marker from bleeding in
+# when a ';' is edited away — red-teamed). Capped to ±150 chars around the SPAN to stay
+# local; a chunk with CONFLICTING markers yields no direction (reject upstream).
+_SENT_SPLIT = re.compile(r"(?<!\d)[;:](?!\d)|\s-\s")
+
+
+def _host_chunk(corpus_norm: str, span_norm: str) -> str:
+    """The corpus chunk hosting THE CLAIMANT'S OWN span occurrence (L1 has already proven
+    it occurs exactly once). Red-team lesson: direction must be read where the validated
+    span actually sits — a first-match anchor search can land on a DIFFERENT occurrence
+    of the same value (e.g. a minimum bullet elsewhere) while the span sits inside a
+    maximum provision."""
+    pos = corpus_norm.find(span_norm)
+    if pos < 0:                                    # unreachable after L1; fail closed
+        return ""
+    p_end = pos + len(span_norm)
+    start, end = 0, len(corpus_norm)
+    for b in _SENT_SPLIT.finditer(corpus_norm):
+        if b.start() < pos:
+            start = b.end()
+        elif b.start() >= p_end:
+            end = b.start()
+            break
+    start = max(start, pos - 150)
+    end = min(end, p_end + 150)
+    return corpus_norm[start:end]
 
 
 def _span_values(span_norm: str, unit: str) -> List[float]:
@@ -267,17 +360,29 @@ def validate_claim(claim: SpanClaim, corpus_raw: str) -> Verdict:
     if n > 1:
         return Verdict.reject("REJECT_SPAN_NOT_UNIQUE", f"span occurs {n} times in the corpus")
 
+    # Host chunk of the claimant's own (unique) occurrence — used for the polarity guard
+    # and, for marker-less spans, the direction fallback.
+    chunk = _host_chunk(corpus_norm, span_norm)
+    if _NEG_DEROG.search(chunk):
+        return Verdict.reject("REJECT_POLARITY_NEGATED",
+                              "the statute chunk hosting this span NEGATES the reduction "
+                              "('never/non ... reducible') — a truncated span cannot drop "
+                              "the negator")
+
     # L2 — deterministic re-parse from the span alone.
     unit = _canon_unit(claim.unit)
     if unit is None:
         return Verdict.reject("REJECT_UNIT_UNKNOWN", f"unit {claim.unit!r} outside the closed lexicon")
     direction = _span_direction(span_norm)
-    if direction is None:
-        return Verdict.reject("REJECT_DIRECTION_AMBIGUOUS",
-                              "no (or conflicting) comparative phrasing in the span")
-    if direction != claim.operator:
+    if direction == _CONFLICT:
+        return Verdict.reject("REJECT_SPAN_DIRECTION_CONFLICT",
+                              "span carries BOTH minimum and maximum phrasing — a "
+                              "self-contradictory span can never bind")
+    if direction is not None and direction != claim.operator:
         return Verdict.reject("REJECT_OPERATOR_MISMATCH",
                               f"span phrasing implies {direction!r}, claim says {claim.operator!r}")
+    # direction None is NOT yet a rejection: a marker-less span may still bind through a
+    # corpus-unique anchor, whose host statute chunk then supplies the direction (below).
     cands = _span_values(span_norm, unit)
     if not cands:
         return Verdict.reject("REJECT_VALUE_NOT_IN_SPAN",
@@ -290,8 +395,9 @@ def validate_claim(claim: SpanClaim, corpus_raw: str) -> Verdict:
         return Verdict.reject("REJECT_VALUE_MISMATCH",
                               f"span states {cands[0]}, claim states {claim.value}")
 
-    # L3 — anchor cross-examination: the span must carry a known lead-in anchor, and that
-    # anchor must re-derive the same value in-span AND corpus-wide, uniquely.
+    # L3 — anchor cross-examination, two tiers.
+    # PRIMARY tier: the span carries a statutory lead-in anchor re-deriving the same value
+    # in-span AND corpus-wide, uniquely.
     matched_key = None
     for key, pat in ANCHORS.items():
         if ANCHOR_UNIT[key] != unit:
@@ -307,22 +413,70 @@ def validate_claim(claim: SpanClaim, corpus_raw: str) -> Verdict:
                                   f"claim states {claim.value}", )
         matched_key = key
         break
+
+    if matched_key is not None:
+        corpus_vals = _anchor_values(corpus, matched_key)
+        if not corpus_vals:
+            return Verdict.reject("REJECT_ANCHOR_ABSENT_IN_CORPUS",
+                                  f"anchor {matched_key} matches the span but not the corpus")
+        if len(corpus_vals) > 1:
+            return Verdict.reject("REJECT_CORPUS_ANCHOR_AMBIGUOUS",
+                                  f"anchor {matched_key} resolves to multiple distinct corpus values "
+                                  f"{sorted(corpus_vals)} (possible decoy injection); refusing to pick one")
+        src = next(iter(corpus_vals))
+        if abs(src - claim.value) > _EQ_TOL:
+            return Verdict.reject("REJECT_CORPUS_VALUE_MISMATCH",
+                                  f"corpus permits {src} for {matched_key}, claim states {claim.value}")
+    else:
+        # GLOSS tier: the span carries a verbatim English-gloss anchor. Never a second
+        # source of truth — the gloss must be corpus-unique AND its value must equal the
+        # PRIMARY anchor's corpus-unique value (cross-language agreement). A shadowed,
+        # deleted, or divergent primary rejects the gloss path too.
+        for gkey, gpat in GLOSS_ANCHORS.items():
+            if GLOSS_UNIT[gkey] != unit:
+                continue
+            gm = re.search(gpat, span_norm, re.S | re.I)
+            if not gm:
+                continue
+            in_span = (int(gm.group(1)) / int(gm.group(2)) if gkey == "gloss_aero"
+                       else float(gm.group(1)))
+            if abs(in_span - claim.value) > _EQ_TOL:
+                return Verdict.reject("REJECT_ANCHOR_VALUE_MISMATCH",
+                                      f"gloss anchor {gkey} re-derives {in_span} from the span, "
+                                      f"claim states {claim.value}")
+            gvals = _gloss_values(corpus_norm, gkey)
+            if len(gvals) != 1:
+                return Verdict.reject("REJECT_CORPUS_ANCHOR_AMBIGUOUS",
+                                      f"gloss anchor {gkey} resolves to {sorted(gvals)} in the "
+                                      f"corpus (absent or ambiguous); refusing")
+            pkey = GLOSS_TO_PRIMARY[gkey]
+            pvals = _anchor_values(corpus, pkey)
+            if len(pvals) != 1 or abs(next(iter(pvals)) - claim.value) > _EQ_TOL or \
+                    abs(next(iter(gvals)) - claim.value) > _EQ_TOL:
+                return Verdict.reject("REJECT_GLOSS_PRIMARY_DISAGREEMENT",
+                                      f"gloss {gkey}={sorted(gvals)} must agree with primary "
+                                      f"{pkey}={sorted(pvals)} and the claim ({claim.value}); "
+                                      f"any shadowed/deleted/divergent primary rejects the gloss path")
+            matched_key = pkey
+            break
     if matched_key is None:
         return Verdict.reject("REJECT_NO_ANCHOR",
                               "span carries no known deterministic lead-in anchor "
                               "(decoy scope, or a genuinely new phrasing -> triage)")
-    corpus_vals = _anchor_values(corpus, matched_key)
-    if not corpus_vals:
-        return Verdict.reject("REJECT_ANCHOR_ABSENT_IN_CORPUS",
-                              f"anchor {matched_key} matches the span but not the corpus")
-    if len(corpus_vals) > 1:
-        return Verdict.reject("REJECT_CORPUS_ANCHOR_AMBIGUOUS",
-                              f"anchor {matched_key} resolves to multiple distinct corpus values "
-                              f"{sorted(corpus_vals)} (possible decoy injection); refusing to pick one")
-    src = next(iter(corpus_vals))
-    if abs(src - claim.value) > _EQ_TOL:
-        return Verdict.reject("REJECT_CORPUS_VALUE_MISMATCH",
-                              f"corpus permits {src} for {matched_key}, claim states {claim.value}")
+
+    # Direction resolution for marker-less spans: derived from the statute chunk hosting
+    # THE SPAN'S OWN occurrence (claimant-immutable), never from the claim itself and
+    # never from a different occurrence of the same anchor value.
+    if direction is None:
+        direction = _span_direction(chunk)
+        if direction is None or direction == _CONFLICT:
+            return Verdict.reject("REJECT_DIRECTION_AMBIGUOUS",
+                                  "no comparative phrasing in the span, and the span's host "
+                                  "statute chunk supplies none (or conflicting) either")
+        if direction != claim.operator:
+            return Verdict.reject("REJECT_OPERATOR_MISMATCH",
+                                  f"host statute chunk implies {direction!r}, "
+                                  f"claim says {claim.operator!r}")
 
     # L4 — direction policy: every anchored metric here is a minimum.
     if claim.operator != ">=":
@@ -341,7 +495,7 @@ _COASTAL_DECOY = (
 
 
 def corpus_variants(raw: str) -> dict:
-    """Deterministic adversarial mutations of the statute corpus."""
+    """Deterministic adversarial mutations of the statute corpus (live-loop set)."""
     v1 = raw.replace("## \"Salva Casa\"", _COASTAL_DECOY + "\n## \"Salva Casa\"", 1)
     assert v1 != raw, "V1 injection point not found"
     v2 = raw.replace("non potrà essere\n> inferiore a **1/8", "non potrà essere\n> superiore a **1/8", 1)
@@ -354,6 +508,50 @@ def corpus_variants(raw: str) -> dict:
         "V2_operator_manipulated": v2,     # 'non potra essere superiore a 1/8'
         "V3_habitable_span_deleted": v3,   # 'fissata in m 2,70' removed
     }
+
+
+def battery_variants(raw: str) -> dict:
+    """corpus_variants + battery-only mutations targeting the gloss tier and the
+    host-sentence direction fallback (not part of the live loop's truth table)."""
+    out = corpus_variants(raw)
+    v4 = raw.replace("reducible to 2.40 m for corridors",
+                     "reducible to 2.10 m for garages and cellars; reducible to 2.40 m "
+                     "for corridors", 1)
+    assert v4 != raw, "V4 gloss-decoy injection point not found"
+    v5 = raw.replace("*alloggio monostanza* minimum surface (incl. services)",
+                     "*alloggio monostanza* surface (incl. services)", 1)
+    assert v5 != raw, "V5 direction-strip point not found"
+    out["V4_gloss_decoy_shadow"] = v4      # look-alike English gloss with a divergent value
+    out["V5_direction_stripped"] = v5      # 'minimum' removed from the monostanza sc bullet
+    # Red-team round 2 mutations (poisoned-corpus class; each pins a fixed enabler):
+    v6 = raw.replace("due persone.»",
+                     "due persone. Nota: il numero degli occupanti non superiore a due.»", 1)
+    assert v6 != raw, "V6 conflict injection point not found"
+    v7 = raw.replace("*alloggio monostanza* minimum surface (incl. services)",
+                     "*alloggio monostanza* surface (ricambio aria min. 0,5 vol/h, "
+                     "incl. services)", 1)
+    assert v7 != raw, "V7 min-token injection point not found"
+    v8 = raw.replace("## Target rule",
+                     "La superficie per nucleo non potrà essere superiore a 28 m² (2 persons) "
+                     "per nucleo di emergenza.\n\n## Target rule", 1)
+    assert v8 != raw, "V8 max-provision injection point not found"
+    v9 = raw.replace("(derogating the 2,70 m baseline);", "(derogating the 2,70 m baseline),", 1) \
+            .replace("*alloggio monostanza* minimum surface", "*alloggio monostanza* surface", 1)
+    assert v9 != raw, "V9 boundary-removal point not found"
+    v10 = raw.replace("reducible to 2.40 m for corridors",
+                      "never reducible to 2.40 m for corridors", 1)
+    assert v10 != raw, "V10 negation injection point not found"
+    v11 = raw.replace("down to the reduced minimums:",
+                      "down to the reduced minimums (existing buildings are reducible to "
+                      "2.40 m under Salva-Casa 5-ter):", 1)
+    assert v11 != raw, "V11 scope-crossover injection point not found"
+    out["V6_conflicting_span"] = v6        # LE note appended inside the monostanza sentence
+    out["V7_min_token_decoy"] = v7         # 'min.' time/abbrev token where 'minimum' was stripped
+    out["V8_same_value_max"] = v8          # second sc_2p-shaped occurrence inside a MAX provision
+    out["V9_boundary_bleed"] = v9          # ';' -> ',' so the height bullet abuts the stripped bullet
+    out["V10_negated_gloss"] = v10         # 'never reducible to 2.40 m' — truncation attack
+    out["V11_gloss_scope_crossover"] = v11 # Salva-Casa-scoped gloss look-alike at the shared 2.40
+    return out
 
 
 # --- the offline meta-gate battery (deterministic; no LLM) ------------------------------
@@ -421,6 +619,64 @@ def battery() -> List[Tuple[str, str, SpanClaim, str]]:
          _c("accessory min height", 2.40, ">=", "m", _SPAN_ACCESSORY), "ACCEPT"),
         ("V3_habitable_span_deleted", "ok_v3_aero_unaffected",
          _c("aero ratio", 0.125, ">=", "ratio", _SPAN_AERO), "ACCEPT"),
+        # --- GLOSS TIER (37-pin replay upgrade): verbatim English-gloss accepts... ---
+        ("V0_baseline", "ok_gloss_accessory_240",
+         _c("accessory min height", 2.40, ">=", "m",
+            "reducible to 2,40 m for corridors, circulation, bathrooms, WCs and store rooms"), "ACCEPT"),
+        ("V0_baseline", "ok_gloss_habitable_270",
+         _c("habitable min height", 2.70, ">=", "m",
+            "Habitable rooms: min net internal height 2.70 m"), "ACCEPT"),
+        ("V0_baseline", "ok_gloss_aero_verbatim",
+         _c("aero ratio", 0.125, ">=", "ratio",
+            "Openable window area must be ≥ 1/8 of the floor area"), "ACCEPT"),
+        # ...and the attacks that must keep the tier honest.
+        ("V0_baseline", "atk_gloss_paraphrase_not_verbatim",
+         _c("aero ratio", 0.125, ">=", "ratio",
+            "openable window area not less than 0.125 of the floor area"), "REJECT"),
+        ("V4_gloss_decoy_shadow", "mut_gloss_decoy_value",
+         _c("accessory min height", 2.10, ">=", "m",
+            "reducible to 2.10 m for garages and cellars"), "REJECT"),
+        ("V4_gloss_decoy_shadow", "ok_gloss_scope_bound_survives_offscope_decoy",
+         _c("accessory min height", 2.40, ">=", "m",
+            "reducible to 2.40 m for corridors, circulation, bathrooms, WCs and store rooms"), "ACCEPT"),
+        ("V4_gloss_decoy_shadow", "ok_v4_primary_accessory_unaffected",
+         _c("accessory min height", 2.40, ">=", "m", _SPAN_ACCESSORY), "ACCEPT"),
+        ("V1_coastal_decoy_shadow", "mut_gloss_blocked_by_shadowed_primary",
+         _c("habitable min height", 2.70, ">=", "m",
+            "Habitable rooms: min net internal height 2.70 m"), "REJECT"),
+        # --- HOST-SENTENCE DIRECTION FALLBACK: marker-less tight spans... ---
+        ("V0_baseline", "ok_host_dir_sc1p_tight",
+         _c("monostanza sc 1p", 20.0, ">=", "m2", "20 m² (1 person)"), "ACCEPT"),
+        ("V0_baseline", "ok_host_dir_sc2p_tight",
+         _c("monostanza sc 2p", 28.0, ">=", "m2", "28 m² (2 persons)"), "ACCEPT"),
+        # ...and its attacks.
+        ("V0_baseline", "atk_host_dir_le_claim",
+         _c("monostanza sc 2p", 28.0, "<=", "m2", "28 m² (2 persons)"), "REJECT"),
+        ("V5_direction_stripped", "mut_host_dir_stripped",
+         _c("monostanza sc 2p", 28.0, ">=", "m2", "28 m² (2 persons)"), "REJECT"),
+        # --- RED-TEAM ROUND 2 pins (poisoned-corpus enablers, each individually fixed) ---
+        ("V6_conflicting_span", "mut_conflicting_span_never_binds",
+         _c("monostanza 2p", 38.0, ">=", "mq",
+            "non inferiore a mq 38 se per due persone. Nota: il numero degli occupanti "
+            "non superiore a due"), "REJECT"),
+        ("V7_min_token_decoy", "mut_min_time_token_no_direction",
+         _c("monostanza sc 2p", 28.0, ">=", "m2", "28 m² (2 persons)"), "REJECT"),
+        ("V8_same_value_max", "mut_same_value_max_occurrence",
+         _c("nucleo surface", 28.0, ">=", "m2", "28 m² (2 persons) per nucleo di emergenza"),
+         "REJECT"),
+        ("V8_same_value_max", "mut_v8_naked_span_now_ambiguous",
+         _c("monostanza sc 2p", 28.0, ">=", "m2", "28 m² (2 persons)"), "REJECT"),
+        ("V8_same_value_max", "ok_v8_true_minimum_still_reachable",
+         _c("monostanza sc 2p", 28.0, ">=", "m2", "/ 28 m² (2 persons)"), "ACCEPT"),
+        ("V9_boundary_bleed", "mut_boundary_bleed_no_inherited_direction",
+         _c("monostanza sc 2p", 28.0, ">=", "m2", "28 m² (2 persons)"), "REJECT"),
+        ("V10_negated_gloss", "mut_negation_truncated_out_of_span",
+         _c("accessory min height", 2.40, ">=", "m",
+            "reducible to 2.40 m for corridors, circulation, bathrooms, WCs and store rooms"),
+         "REJECT"),
+        ("V11_gloss_scope_crossover", "mut_gloss_scope_crossover_no_anchor",
+         _c("accessory min height", 2.40, ">=", "m",
+            "reducible to 2.40 m under Salva-Casa 5-ter"), "REJECT"),
     ]
 
 
@@ -442,7 +698,7 @@ def _anchor_parity_row() -> dict:
 
 
 def run_battery(raw: str) -> Tuple[int, int, List[dict]]:
-    variants = corpus_variants(raw)
+    variants = battery_variants(raw)
     rows, mismatches = [], 0
     for variant, case_id, claim, expected in battery():
         v = validate_claim(claim, variants[variant])

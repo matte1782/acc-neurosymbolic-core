@@ -38,8 +38,10 @@ data/raw/
 sandbox/data/*_report*.json
 sandbox/probe_*.py
 
-# Track B gate-spike run reports (regenerable: python sandbox/gate_spike.py --live --report ...)
+# Track B gate-spike / replay run reports (regenerable: python sandbox/gate_spike.py or
+# gate_replay.py with --live --report ...)
 sandbox/spike_report_*.json
+sandbox/replay_report_*.json
 
 # Audit research: the adversarial corpus .ifc are covered by *.ifc above (regenerable via
 # research/corpus/gen_adversarial.py); the run output is regenerable too. The pinned
