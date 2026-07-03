@@ -486,6 +486,441 @@ def validate_claim(claim: SpanClaim, corpus_raw: str) -> Verdict:
     return Verdict(True, "ACCEPT", f"value {claim.value} bound to {matched_key}", matched_key)
 
 
+# =========================================================================================
+# CORPUS-TRUST MODEL (ADR-014, closes the ADR-013 open item): sha256 manifest over rule
+# corpora. The poisoned-corpus attack class red-teamed in ADR-013 assumed an attacker-
+# authored statute file reaching the gate. The trust boundary is FILE INGESTION: every
+# corpus file the CLIs read must hash-match research/corpus/manifest.json or the gate
+# refuses to start. Hashing is over the NEWLINE-NORMALIZED utf-8 text (\r\n -> \n; a
+# lone \r is deliberately NOT normalized — it changes the hash and fails closed) so
+# git's platform-dependent eol conversion cannot invalidate a legitimate checkout.
+# HONEST LIMITS, stated plainly: (a) the manifest is a HASH ALLOW-LIST, not a signature —
+# an actor who can write the corpus can also rewrite the manifest; the audit boundary
+# for that is git history/review, not this process; (b) validate_claim()/
+# validate_vocab_claim() operate on TEXT and are deliberately callable with in-memory
+# adversarial variants (the battery's V1-V13, the replay's C_*) — those are the
+# harness's own attack simulations, derived AFTER a trusted load, inside the boundary.
+# =========================================================================================
+class UntrustedCorpusError(RuntimeError):
+    """A corpus file failed the manifest check: altered, unlisted, or manifest missing."""
+
+
+_REPO_ROOT = _SANDBOX.parent
+MANIFEST_PATH = _REPO_ROOT / "research" / "corpus" / "manifest.json"
+
+
+def corpus_sha256(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
+
+
+def load_trusted_corpus(path: Path, manifest_path: Path = None) -> str:
+    """The ONLY sanctioned file-ingestion path for statute/rule corpora. FAIL-CLOSED:
+    a missing manifest, an unlisted (unsigned) file, or a hash mismatch (altered) all
+    raise UntrustedCorpusError before a single byte reaches the gate."""
+    path = Path(path).resolve()
+    mpath = Path(manifest_path) if manifest_path else MANIFEST_PATH
+    if not mpath.exists():
+        raise UntrustedCorpusError(
+            f"corpus-trust manifest missing ({mpath}) — refusing to ingest ANY corpus "
+            f"without a trust root (fail-closed)")
+    manifest = json.loads(mpath.read_text(encoding="utf-8"))
+    if manifest.get("algorithm") != "sha256":
+        raise UntrustedCorpusError(f"unsupported manifest algorithm {manifest.get('algorithm')!r}")
+    try:
+        key = str(path.relative_to(_REPO_ROOT.resolve())).replace("\\", "/")
+    except ValueError:
+        key = str(path).replace("\\", "/")
+    expected = manifest.get("trusted_corpora", {}).get(key)
+    if expected is None:
+        raise UntrustedCorpusError(
+            f"corpus {key!r} is UNLISTED (unsigned: absent from {mpath.name}) — "
+            f"refusing to ingest")
+    text = path.read_text(encoding="utf-8")
+    actual = corpus_sha256(text)
+    if actual != expected:
+        raise UntrustedCorpusError(
+            f"corpus {key!r} is ALTERED: sha256 {actual} != manifest {expected} — "
+            f"refusing to ingest (poisoned-corpus class, ADR-013)")
+    return text
+
+
+# =========================================================================================
+# SELECTION-VOCABULARY GATE (strategy §3.2.4 gate type 6): non-numeric applicability
+# tokens (room types) bind to ontology classes ONLY through the statute's own enumeration
+# prose — verify-never-trust extended from numbers to vocabulary. The tables below are
+# hand-copied from parser.py BY DESIGN (gate-path isolation) and diffed by the battery's
+# parity pin, exactly like ANCHORS.
+# =========================================================================================
+class VocabClaim(BaseModel):
+    """One LLM classification claim: token -> ontology class, citing a verbatim span."""
+
+    token: str = Field(description="applicability token, e.g. 'corridoio'")
+    ontology_class: str = Field(description="'accessory' (acc:AccessorySpace) — closed lexicon")
+    span: str = Field(description="verbatim statute span containing the enumeration")
+
+
+_SELECTION_ANCHOR = r"riducibile\s+a\s+m\s*\d+[.,]\d+\s+per\s+(.+?)[.»]"     # parser.py:416
+# Span-local variant: a claim span is a FRAGMENT and legitimately ends where the claimant
+# cut it, so end-of-string is an admissible terminator IN-SPAN ONLY. The corpus-wide
+# derivation (_derive_enumeration) keeps the parser-parity pattern with its hard [.»]
+# terminator — the parity pin diffs THAT one against parser.py.
+_SELECTION_ANCHOR_SPAN = r"riducibile\s+a\s+m\s*\d+[.,]\d+\s+per\s+(.+?)(?:[.»]|$)"
+_SELECTION_STOPWORDS = frozenset({"i", "in", "genere", "ed"})                # parser.py:418
+_ART1_ENUMERATION = frozenset({"corridoi", "disimpegni", "bagni", "gabinetti", "ripostigli"})
+# Closed class lexicon: the Art.1 enumeration maps to exactly one ontology class.
+_VOCAB_CLASSES = {"accessory": "acc:AccessorySpace"}
+# CLOSED INFLECTION LEXICON (red-team blocker fix): bare vowel-run stem-equality admits
+# invented colliders ('bagnio', 'corridoia', 'gabinetta' all stem-equal real terms). The
+# spike's tokens are LLM-extracted UNTRUSTED input (unlike production, where tokens come
+# from the integrity-pinned applicability.json), so stem-equality alone is not enough
+# here: after the stem matches, the token must ALSO be one of the term's closed admissible
+# inflections (plural / regular singular / the table's canonical truncated hint). This is
+# a spike-layer ADDITION on top of the parity-pinned stem semantics — parser.py's own
+# _it_stem/stem-equality are untouched (their tokens are table-pinned, not attacker-
+# reachable); a coordinated production hardening is recorded in ADR-014 as follow-up.
+_TERM_INFLECTIONS = {
+    "corridoi":   frozenset({"corridoi", "corridoio", "corrid"}),
+    "disimpegni": frozenset({"disimpegni", "disimpegno", "disimpegn"}),
+    "bagni":      frozenset({"bagni", "bagno", "bagn"}),
+    "gabinetti":  frozenset({"gabinetti", "gabinetto", "gabinett"}),
+    "ripostigli": frozenset({"ripostigli", "ripostiglio", "ripostigl"}),
+}
+
+
+def _it_stem(token: str) -> str:
+    """parser.py:423-429 verbatim semantics: strip the trailing inflection-vowel run."""
+    return re.sub(r"[aeiou]+$", "", (token or "").lower())
+
+
+def _termset_from_capture(captured: str) -> frozenset:
+    toks = [t for t in re.split(r"[^a-zàèéìòù]+", captured.lower()) if t]
+    return frozenset(t for t in toks
+                     if t not in _SELECTION_STOPWORDS and len(_it_stem(t)) >= 3)
+
+
+def _derive_enumeration(corpus: str):
+    """(termset, error) — unique-or-reject re-derivation of the Art.1 enumeration from the
+    answer-key-excluded prose; drift from the pinned 5-set is itself a rejection."""
+    spans = re.findall(_SELECTION_ANCHOR, _demark(corpus), re.S | re.I)
+    termsets = {_termset_from_capture(s) for s in spans}
+    if not termsets:
+        return None, ("REJECT_ENUM_ABSENT", "the Art.1 reduced-height enumeration is absent "
+                                            "from the statute prose — no backfill")
+    if len(termsets) > 1:
+        return None, ("REJECT_ENUM_AMBIGUOUS",
+                      f"the enumeration anchor matches multiple distinct term-sets "
+                      f"{sorted(sorted(s) for s in termsets)} (duplicate/shadow injection)")
+    enumeration = next(iter(termsets))
+    if enumeration != _ART1_ENUMERATION:
+        return None, ("REJECT_ENUM_DRIFT",
+                      f"statute enumeration {sorted(enumeration)} drifted from the pinned "
+                      f"Art.1 5-set {sorted(_ART1_ENUMERATION)}")
+    return enumeration, None
+
+
+def validate_vocab_claim(claim: VocabClaim, corpus_raw: str) -> Verdict:
+    """The vocabulary protocol: V-L1 span fidelity -> V-L2 enumeration re-derivation
+    (unique + drift-pinned) -> V-L3 stem-EQUALITY token binding (never prefix) ->
+    V-L4 closed class lexicon. Any miss REJECTS to human triage."""
+    _enforce_policy_anchor()
+    corpus = crosscheck_corpus(corpus_raw)
+    span_norm = _norm(claim.span)
+    if not span_norm or not (claim.token or "").strip():
+        return Verdict.reject("REJECT_MALFORMED", "empty span or token")
+
+    # V-L1 — span fidelity: verbatim, exactly once (answer-key excluded).
+    n = _norm(corpus).count(span_norm)
+    if n == 0:
+        return Verdict.reject("REJECT_SPAN_NOT_FOUND",
+                              "span is not a verbatim substring of the statute corpus")
+    if n > 1:
+        return Verdict.reject("REJECT_SPAN_NOT_UNIQUE", f"span occurs {n} times")
+    # The span itself must carry the enumeration anchor and yield the SAME termset the
+    # corpus yields (in-span/corpus agreement, mirroring the numeric L3 two-level check).
+    m = re.search(_SELECTION_ANCHOR_SPAN, _demark(claim.span), re.S | re.I)
+    if not m:
+        return Verdict.reject("REJECT_NO_ANCHOR",
+                              "span does not carry the Art.1 enumeration lead-in "
+                              "('riducibile a m X per ...')")
+    span_terms = _termset_from_capture(m.group(1))
+
+    # V-L2 — corpus-wide enumeration re-derivation (unique-or-reject, drift-pinned).
+    enumeration, err = _derive_enumeration(corpus)
+    if err:
+        return Verdict.reject(*err)
+    if span_terms != enumeration:
+        return Verdict.reject("REJECT_SPAN_ENUM_MISMATCH",
+                              f"span termset {sorted(span_terms)} != corpus enumeration "
+                              f"{sorted(enumeration)}")
+
+    # V-L3 — stem-EQUALITY binding (parser.py:469-499 semantics): empty stems never
+    # anchor; truncations ('bag') and extensions ('bagno_decoy') do not stem-equal.
+    stem = _it_stem(claim.token)
+    if not stem:
+        return Verdict.reject("REJECT_EMPTY_STEM",
+                              f"token {claim.token!r} has an empty stem — never anchors")
+    term = next((t for t in sorted(enumeration) if _it_stem(t) == stem), None)
+    if term is None:
+        return Verdict.reject("REJECT_TOKEN_UNANCHORED",
+                              f"token {claim.token!r} (stem {stem!r}) stem-equals no Art.1 "
+                              f"enumerated term — NO-INVENT: an unanchored token is never "
+                              f"certified (cross-lingual synonyms stay declared debt)")
+    if claim.token.strip().lower() not in _TERM_INFLECTIONS.get(term, frozenset()):
+        return Verdict.reject("REJECT_TOKEN_INFLECTION",
+                              f"token {claim.token!r} stem-collides with {term!r} but is not "
+                              f"one of its closed admissible inflections "
+                              f"{sorted(_TERM_INFLECTIONS.get(term, ()))} — invented "
+                              f"vowel-run colliders never bind (red-teamed)")
+
+    # V-L4 — closed class lexicon: the Art.1 enumeration maps to exactly one class.
+    if claim.ontology_class not in _VOCAB_CLASSES:
+        return Verdict.reject("REJECT_CLASS_POLICY",
+                              f"class {claim.ontology_class!r} outside the closed lexicon "
+                              f"{sorted(_VOCAB_CLASSES)} for enumeration-bound tokens")
+
+    return Verdict(True, "ACCEPT",
+                   f"token {claim.token!r} anchored to statute term {term!r} -> "
+                   f"{_VOCAB_CLASSES[claim.ontology_class]}", f"vocab:{term}")
+
+
+# =========================================================================================
+# SHACL COMPILE-PATH EMITTER: gate-verified parameters -> production-shaped Turtle.
+# FAIL-CLOSED EMISSION: refuses unless ALL four numeric keys verified AND the vocabulary
+# gate verified the full enumeration. Output mirrors sandbox/ontology/dm1975_salvacasa.ttl
+# (stable *_PS URIs, sh:minCount 1 + sh:maxCount 1, xsd:decimal bars via Decimal(str(v)) —
+# the ADR-008a exact-at-bar lesson — value-carrying sh:message regenerated from the live
+# value per ADR-008, rdfs:seeAlso provenance anchors) so orchestrator.load_shacl_shapes'
+# guard set accepts it unchanged.
+# =========================================================================================
+class EmitRefusedError(RuntimeError):
+    """Emission refused: incomplete/unverified inputs can never become a rule pack."""
+
+
+def _corpus_bar_decimal(corpus: str, key: str):
+    """The statute's OWN lexical value for an anchored key, as an exact Decimal
+    (unique-or-None over the demarked, answer-key-excluded corpus — same discipline as
+    _anchor_values, but preserving the lexical form: '2,70' -> Decimal('2.70'))."""
+    from decimal import Decimal as _D
+    found = re.findall(ANCHORS[key], _demark(crosscheck_corpus(corpus)), re.S | re.I)
+    if key == "aero_illuminating_ratio":
+        vals = {_D(a) / _D(b) for a, b in found}
+    else:
+        vals = {_D(str(g).replace(",", ".")) for g in found}
+    return next(iter(vals)) if len(vals) == 1 else None
+
+
+_EMIT_KEYS = ("min_height_habitable_m", "min_height_accessory_m",
+              "min_height_salva_casa_m", "aero_illuminating_ratio")
+_EMIT_SEEALSO = {
+    "MinHeightHabitable_PS": "legal:DM_1975_Abitabilita",
+    "MinHeightAccessory_PS": "legal:DM_1975_Abitabilita",
+    "MinHeightSalvaCasa_PS": "legal:DPR380_art24_SalvaCasa",
+    "MinAeroRatio_PS": "legal:DM_1975_Abitabilita",
+}
+_EMIT_PATHS = {
+    "MinHeightHabitable_PS": "acc:heightM", "MinHeightAccessory_PS": "acc:heightM",
+    "MinHeightSalvaCasa_PS": "acc:heightM", "MinAeroRatio_PS": "acc:aeroRatio",
+}
+
+
+def emit_shacl(verified: dict, vocab: dict, corpus_text: str) -> str:
+    """Serialize gate-verified thresholds + vocabulary into loadable SHACL Turtle.
+
+    `verified`: {the 4 numeric keys: value} — every key mandatory, values finite and > 0.
+    `vocab`:    validate_vocab_claim-shaped result set: {'enumeration': [5 terms],
+                'anchored': {token: term}} — the full pinned 5-set mandatory.
+    `corpus_text`: the trusted corpus the values were verified against; its sha256 is
+                embedded as emission provenance."""
+    import math
+    missing = [k for k in _EMIT_KEYS if k not in verified]
+    if missing:
+        raise EmitRefusedError(f"emission refused: unverified/missing keys {missing} "
+                               f"(all four numeric thresholds must pass the gate)")
+    for k, v in verified.items():
+        if not isinstance(v, (int, float)) or isinstance(v, bool) \
+                or not math.isfinite(v) or v <= 0:
+            raise EmitRefusedError(f"emission refused: {k} carries a non-finite/non-positive "
+                                   f"value {v!r}")
+    # NUMERIC RE-VALIDATION against the corpus (red-team fix: emission previously took
+    # `verified` on faith while re-checking only the vocabulary — the asymmetry let
+    # statute-contradicting bars and mutated corpora emit with a FALSE provenance hash).
+    # Each bar is re-derived from the corpus's own anchor (unique-or-refuse) and the
+    # EMITTED lexical form is the STATUTE's ('2,70' -> Decimal('2.70')), so caller-side
+    # float drift (2.6999999999999997) normalizes to the statutory precision instead of
+    # leaking into a legal bar or an operator-facing message.
+    dec = {}
+    for k in _EMIT_KEYS:
+        bar = _corpus_bar_decimal(corpus_text, k)
+        if bar is None:
+            raise EmitRefusedError(f"emission refused: the corpus anchor for {k} is absent "
+                                   f"or ambiguous — a deleted/decoy-shadowed corpus can "
+                                   f"never become a rule pack")
+        if abs(float(bar) - float(verified[k])) > _EQ_TOL:
+            raise EmitRefusedError(f"emission refused: verified[{k}]={verified[k]!r} "
+                                   f"contradicts the corpus anchor value {bar} — refusing "
+                                   f"to attest unverifiable numbers")
+        dec[k] = bar                                   # the STATUTE's lexical form is emitted
+    enum = sorted(vocab.get("enumeration") or [])
+    if frozenset(enum) != _ART1_ENUMERATION:
+        raise EmitRefusedError(f"emission refused: vocabulary enumeration {enum} is not the "
+                               f"gate-pinned Art.1 5-set {sorted(_ART1_ENUMERATION)}")
+    for token in (vocab.get("anchored") or {}):
+        v = validate_vocab_claim(
+            VocabClaim(token=token, ontology_class="accessory",
+                       span="riducibile a **m 2,40** per i corridoi, i disimpegni in genere, "
+                            "i bagni, i gabinetti ed i ripostigli"), corpus_text)
+        if not v.accepted:
+            raise EmitRefusedError(f"emission refused: vocabulary token {token!r} failed the "
+                                   f"selection gate ({v.reason}: {v.detail})")
+
+    # Lazy import of the RULES-side templates (single source for messages; the validation
+    # gate path above never imports production code — emission is compile-path).
+    sys.path.insert(0, str(_SANDBOX))
+    import orchestrator as _orch
+    msg = {ps: tmpl.format(v=dec[attr])
+           for ps, attr, tmpl in _orch._THRESHOLD_SLOTS}
+    slot_attr = {ps: attr for ps, attr, _t in _orch._THRESHOLD_SLOTS}
+    enum_it = ", ".join(enum)
+
+    lines = [
+        "# AUTO-EMITTED by sandbox/gate_spike.py emit_shacl() — span-quote-gate-verified "
+        "parameters.",
+        f"# emission provenance: corpus sha256 {corpus_sha256(corpus_text)}; "
+        f"gate: 4 numeric keys + {len(enum)}-term Art.1 enumeration, all verified.",
+        "# Structure mirrors sandbox/ontology/dm1975_salvacasa.ttl (ADR-008/008a contracts).",
+        "",
+        "@prefix sh:    <http://www.w3.org/ns/shacl#> .",
+        "@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .",
+        "@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .",
+        "@prefix acc:   <https://acc.local/ontology#> .",
+        "@prefix legal: <https://acc.local/legal#> .",
+        "",
+        "acc:EvaluatedSpace a rdfs:Class ;",
+        '    rdfs:comment "An IfcSpace materialized for legal evaluation." .',
+        "",
+        "acc:AccessorySpace a rdfs:Class ;",
+        "    rdfs:subClassOf acc:EvaluatedSpace ;",
+        f'    rdfs:comment "Accessory room — gate-verified DM 1975 art.1 enumeration: '
+        f'{enum_it}. Lower height bar; the aero rule does NOT apply." .',
+        "",
+        "acc:HabitableBaselineSpace a rdfs:Class ;",
+        "    rdfs:subClassOf acc:EvaluatedSpace ;",
+        '    rdfs:comment "Habitable (or unknown = strict complement) under the ordinary '
+        'DM 1975 regime." .',
+        "",
+        "acc:HabitableSalvaCasaSpace a rdfs:Class ;",
+        "    rdfs:subClassOf acc:EvaluatedSpace ;",
+        '    rdfs:comment "Habitable (or unknown) under the Salva Casa derogation '
+        '(DPR 380/2001 art.24 c.5-bis; c.5-ter conditions operator-asserted)." .',
+        "",
+        "legal:NormativeProvision a rdfs:Class .",
+        "legal:DM_1975_Abitabilita a legal:NormativeProvision ;",
+        '    rdfs:label "D.M. 5 luglio 1975 (altezze minime e requisiti igienico-sanitari)" .',
+        "legal:DPR380_art24_SalvaCasa a legal:NormativeProvision ;",
+        '    rdfs:label "DPR 380/2001 art. 24 commi 5-bis/5-ter (Salva Casa)" .',
+        "",
+    ]
+    for ps in ("MinHeightHabitable_PS", "MinHeightAccessory_PS",
+               "MinHeightSalvaCasa_PS", "MinAeroRatio_PS"):
+        lines += [
+            f"legal:{ps} a sh:PropertyShape ;",
+            f"    sh:path {_EMIT_PATHS[ps]} ;",
+            "    sh:minCount 1 ;",
+            "    sh:maxCount 1 ;",
+            f"    sh:minInclusive {format(dec[slot_attr[ps]], 'f')} ;",
+            f'    sh:message "{msg[ps]}" ;',
+            f"    rdfs:seeAlso {_EMIT_SEEALSO[ps]} .",
+            "",
+        ]
+    lines += [
+        "legal:AccessoryShape a sh:NodeShape ;",
+        "    sh:targetClass acc:AccessorySpace ;",
+        "    sh:property legal:MinHeightAccessory_PS .",
+        "",
+        "legal:HabitableBaselineShape a sh:NodeShape ;",
+        "    sh:targetClass acc:HabitableBaselineSpace ;",
+        "    sh:property legal:MinHeightHabitable_PS ;",
+        "    sh:property legal:MinAeroRatio_PS .",
+        "",
+        "legal:HabitableSalvaCasaShape a sh:NodeShape ;",
+        "    sh:targetClass acc:HabitableSalvaCasaSpace ;",
+        "    sh:property legal:MinHeightSalvaCasa_PS ;",
+        "    sh:property legal:MinAeroRatio_PS .",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+_EMIT_WIRING = {
+    "AccessoryShape": ("AccessorySpace", frozenset({"MinHeightAccessory_PS"})),
+    "HabitableBaselineShape": ("HabitableBaselineSpace",
+                               frozenset({"MinHeightHabitable_PS", "MinAeroRatio_PS"})),
+    "HabitableSalvaCasaShape": ("HabitableSalvaCasaSpace",
+                                frozenset({"MinHeightSalvaCasa_PS", "MinAeroRatio_PS"})),
+}
+
+
+def verify_emitted_shapes(ttl_text: str, verified: dict) -> bool:
+    """TWO-STAGE tamper verification (red-teamed: the production loader RE-PARAMETERIZES
+    sh:minInclusive from `verified`, so checking only the loaded graph is tautological —
+    a tampered emitted bar would verify green against its own overwrite).
+
+    Stage 1 — RAW-GRAPH audit of the emitted text itself: per property shape, the raw
+    sh:minInclusive literal must numerically equal the gate-verified value (tolerance
+    1e-9 — emission normalizes to the statute's lexical form), sh:path must be the pinned
+    path, sh:minCount >= 1 and sh:maxCount == 1 must be present; per node shape, the
+    sh:targetClass and the EXACT sh:property wiring must match (AccessoryShape must NOT
+    carry the aero shape; both habitable shapes must).
+    Stage 2 — the production loader's own ADR-008a guard set on top.
+    Raises EmitRefusedError / ValueError on any miss."""
+    import tempfile
+    from decimal import Decimal as _D
+    from types import SimpleNamespace
+    from rdflib import Graph, Namespace
+    sys.path.insert(0, str(_SANDBOX))
+    import orchestrator as _orch
+    SH, LEGAL = _orch.SH, _orch.LEGAL
+    ACC = Namespace("https://acc.local/ontology#")
+    path_uri = {"acc:heightM": ACC["heightM"], "acc:aeroRatio": ACC["aeroRatio"]}
+
+    g = Graph()
+    g.parse(data=ttl_text, format="turtle")            # parse error -> fail-closed
+    slot_attr = {ps: attr for ps, attr, _t in _orch._THRESHOLD_SLOTS}
+    for ps_name, attr in slot_attr.items():
+        ps = LEGAL[ps_name]
+        raw = g.value(ps, SH.minInclusive)
+        if raw is None:
+            raise EmitRefusedError(f"emitted TTL: {ps_name} has no raw sh:minInclusive")
+        if abs(_D(str(raw)) - _D(str(float(verified[attr])))) > _D("1e-9"):
+            raise EmitRefusedError(f"emitted bar TAMPER for {ps_name}: raw literal {raw} "
+                                   f"!= gate-verified {verified[attr]!r}")
+        mc = g.value(ps, SH.minCount)
+        if mc is None or int(mc) < 1:
+            raise EmitRefusedError(f"emitted TTL: {ps_name} missing sh:minCount >= 1")
+        xc = g.value(ps, SH.maxCount)
+        if xc is None or int(xc) != 1:
+            raise EmitRefusedError(f"emitted TTL: {ps_name} missing sh:maxCount 1")
+        if g.value(ps, SH.path) != path_uri[_EMIT_PATHS[ps_name]]:
+            raise EmitRefusedError(f"emitted TTL: {ps_name} sh:path TAMPER "
+                                   f"({g.value(ps, SH.path)})")
+    for shape, (target, props) in _EMIT_WIRING.items():
+        node = LEGAL[shape]
+        if g.value(node, SH.targetClass) != ACC[target]:
+            raise EmitRefusedError(f"emitted TTL: {shape} targetClass mismatch")
+        got = {p for p in g.objects(node, SH.property)}
+        if got != {LEGAL[p] for p in props}:
+            raise EmitRefusedError(f"emitted TTL: {shape} property WIRING mismatch "
+                                   f"(fail-open/fail-spurious risk): {sorted(str(x) for x in got)}")
+
+    thr = SimpleNamespace(**{k: verified[k] for k in _EMIT_KEYS})
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "emitted.ttl"
+        p.write_text(ttl_text, encoding="utf-8")
+        _orch.load_shacl_shapes(thr, path=str(p))       # ADR-008a guards on top
+    return True
+
+
 # --- adversarial corpus variants (NEW decoys, per the Day-1 brief) ----------------------
 _COASTAL_DECOY = (
     "\n> *Separate provision (decoy):* nei **comuni costieri** sotto i 300 m s.l.m. "
@@ -551,6 +986,18 @@ def battery_variants(raw: str) -> dict:
     out["V9_boundary_bleed"] = v9          # ';' -> ',' so the height bullet abuts the stripped bullet
     out["V10_negated_gloss"] = v10         # 'never reducible to 2.40 m' — truncation attack
     out["V11_gloss_scope_crossover"] = v11 # Salva-Casa-scoped gloss look-alike at the shared 2.40
+    # Vocabulary-gate mutations (the test_gate.py:264-272 / :299-307 corpus surgeries, verbatim):
+    v12 = raw.replace(
+        "riducibile a **m 2,40** per i corridoi, i disimpegni in genere, i bagni,", "") \
+        .replace("i gabinetti ed i ripostigli", "")
+    assert v12 != raw, "V12 enumeration deletion point not found"
+    v13 = raw.replace(
+        "i gabinetti ed i ripostigli.»",
+        "i gabinetti ed i ripostigli.»\n> Inoltre riducibile a m 2,40 per i garage e le cantine.»",
+        1)
+    assert v13 != raw, "V13 duplicate-enumeration injection point not found"
+    out["V12_enum_deleted"] = v12          # Art.1 enumeration prose removed
+    out["V13_enum_duplicated"] = v13       # second, divergent 'riducibile ... per' term-set
     return out
 
 
@@ -681,20 +1128,195 @@ def battery() -> List[Tuple[str, str, SpanClaim, str]]:
 
 
 def _anchor_parity_row() -> dict:
-    """Battery-time drift pin: the spike's hand-copied ANCHORS must equal the shipped gate's
-    tables. Lazy import at battery time ONLY — validate_claim() itself never imports
-    production code (isolation is preserved on the gate path)."""
+    """Battery-time drift pin: the spike's hand-copied ANCHORS *and* selection tables must
+    equal the shipped gate's. Lazy import at battery time ONLY — validate_claim() itself
+    never imports production code (isolation is preserved on the gate path)."""
     try:
         sys.path.insert(0, str(_SANDBOX))
         import parser as _p  # noqa: PLC0415
         shipped = {**_p._SOURCE_ANCHORS, **_p._MONOSTANZA_ANCHORS}
-        ok = shipped == ANCHORS
-        detail = "" if ok else f"drift keys: {sorted(k for k in set(shipped) | set(ANCHORS) if shipped.get(k) != ANCHORS.get(k))}"
+        drift = [k for k in set(shipped) | set(ANCHORS) if shipped.get(k) != ANCHORS.get(k)]
+        if _SELECTION_ANCHOR != _p._ACCESSORY_SELECTION_ANCHOR:
+            drift.append("_SELECTION_ANCHOR")
+        if _SELECTION_STOPWORDS != _p._IT_SELECTION_STOPWORDS:
+            drift.append("_SELECTION_STOPWORDS")
+        if _ART1_ENUMERATION != _p._ART1_ENUMERATION:
+            drift.append("_ART1_ENUMERATION")
+        stem_probe = ("corridoi", "corrid", "disimpegno", "disimpegni", "bagno", "bagni",
+                      "gabinetti", "ripostiglio", "ripostigli", "i", "bag", "bagno_decoy")
+        if any(_it_stem(t) != _p._it_stem(t) for t in stem_probe):
+            drift.append("_it_stem")
+        ok = not drift
+        detail = "" if ok else f"drift keys: {sorted(drift)}"
     except Exception as exc:  # noqa: BLE001 — an unimportable parser is a parity failure, not a skip
         ok, detail = False, f"parser import failed: {exc}"
     return {"variant": "-", "case": "anchor_parity_vs_parser", "expected": "MATCH",
             "got": "MATCH" if ok else "DRIFT", "reason": "ANCHORS == parser tables" if ok else "ANCHOR_DRIFT",
             "detail": detail, "ok": ok}
+
+
+def _vc(token, ontology_class, span) -> VocabClaim:
+    return VocabClaim(token=token, ontology_class=ontology_class, span=span)
+
+
+def vocab_battery() -> List[Tuple[str, str, VocabClaim, str]]:
+    """(variant, case_id, vocab_claim, expected) — the selection-vocabulary ground truth,
+    mirroring the 8 historical test_gate.py selection pins at claim level."""
+    S = _SPAN_ACCESSORY
+    return [
+        # The 4 art1 tokens anchor across singular/plural stem drift (accepts).
+        ("V0_baseline", "vok_corrid", _vc("corrid", "accessory", S), "ACCEPT"),
+        ("V0_baseline", "vok_disimpegno_drift", _vc("disimpegno", "accessory", S), "ACCEPT"),
+        ("V0_baseline", "vok_bagno_drift", _vc("bagno", "accessory", S), "ACCEPT"),
+        ("V0_baseline", "vok_ripostiglio_drift", _vc("ripostiglio", "accessory", S), "ACCEPT"),
+        # Fabricated / truncated / extended / empty-stem tokens (rejects).
+        ("V0_baseline", "vatk_fabricated_garage", _vc("garage", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_fabricated_cucina", _vc("cucina", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_truncated_bag", _vc("bag", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_extended_bagno_decoy", _vc("bagno_decoy", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_empty_stem_article", _vc("i", "accessory", S), "REJECT"),
+        # Decoy strings as tokens (rejects).
+        ("V0_baseline", "vatk_decoy_montani", _vc("montani", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_decoy_monostanza", _vc("alloggio monostanza", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_decoy_seismic", _vc("seismic", "accessory", S), "REJECT"),
+        # Class policy + span fidelity (rejects).
+        ("V0_baseline", "vatk_wrong_class", _vc("corrid", "habitable", S), "REJECT"),
+        ("V0_baseline", "vatk_answer_key_echo",
+         _vc("corrid", "accessory", "exclude corridoi/bagni/ripostigli"), "REJECT"),
+        ("V0_baseline", "vatk_paraphrase_span",
+         _vc("corrid", "accessory", "riducibile per i corridoi e i bagni"), "REJECT"),
+        # Corpus mutations (rejects — deleted / duplicate-injected enumeration).
+        ("V12_enum_deleted", "vmut_enum_deleted", _vc("corrid", "accessory", S), "REJECT"),
+        ("V13_enum_duplicated", "vmut_enum_duplicated", _vc("corrid", "accessory", S), "REJECT"),
+        # Stem-collision colliders (red-team blocker: invented vowel-run variants of real
+        # terms stem-equal them; the closed inflection lexicon must refuse every one).
+        ("V0_baseline", "vatk_collider_bagnio", _vc("bagnio", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_collider_corridoia", _vc("corridoia", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_collider_gabinetta", _vc("gabinetta", "accessory", S), "REJECT"),
+        ("V0_baseline", "vatk_collider_disimpegnu", _vc("disimpegnu", "accessory", S), "REJECT"),
+        # ...while the genuine singular/plural/hint inflections still bind.
+        ("V0_baseline", "vok_inflection_gabinetto", _vc("gabinetto", "accessory", S), "ACCEPT"),
+    ]
+
+
+def _trust_and_emit_rows(raw: str) -> List[dict]:
+    """Structural battery rows for the corpus-trust model and the SHACL emitter."""
+    import tempfile
+    rows = []
+
+    def row(case, ok, reason, detail=""):
+        rows.append({"variant": "-", "case": case, "expected": "PASS",
+                     "got": "PASS" if ok else "FAIL", "reason": reason,
+                     "detail": detail, "ok": ok})
+
+    # --- corpus trust ---
+    try:
+        trusted = load_trusted_corpus(CORPUS_PATH)
+        row("trust_manifest_accepts_shipped_corpus", trusted == raw,
+            "sha256 matches manifest")
+    except Exception as exc:  # noqa: BLE001
+        row("trust_manifest_accepts_shipped_corpus", False, "UNEXPECTED", str(exc))
+    with tempfile.TemporaryDirectory() as d:
+        tampered = Path(d) / "dm_1975_salva_casa.md"
+        tampered.write_text(raw.replace("m 2,70", "m 2,10"), encoding="utf-8")
+        try:
+            load_trusted_corpus(tampered)
+            row("trust_tampered_corpus_refused", False, "ACCEPTED_TAMPERED")
+        except UntrustedCorpusError as exc:
+            row("trust_tampered_corpus_refused", True, "UntrustedCorpusError",
+                str(exc)[:80])
+        unsigned = Path(d) / "unsigned_statute.md"
+        unsigned.write_text(raw, encoding="utf-8")
+        try:
+            load_trusted_corpus(unsigned)
+            row("trust_unsigned_corpus_refused", False, "ACCEPTED_UNSIGNED")
+        except UntrustedCorpusError as exc:
+            row("trust_unsigned_corpus_refused", True, "UntrustedCorpusError", str(exc)[:80])
+
+    # --- emitter ---
+    verified = {"min_height_habitable_m": 2.70, "min_height_accessory_m": 2.40,
+                "min_height_salva_casa_m": 2.40, "aero_illuminating_ratio": 0.125}
+    vocab = {"enumeration": sorted(_ART1_ENUMERATION),
+             "anchored": {"corrid": "corridoi", "disimpegno": "disimpegni",
+                          "bagno": "bagni", "ripostiglio": "ripostigli"}}
+    try:
+        ttl = emit_shacl(verified, vocab, raw)
+        loaded = verify_emitted_shapes(ttl, verified)
+        terms_ok = all(t in ttl for t in _ART1_ENUMERATION)
+        row("emit_loads_via_production_loader", bool(loaded) and terms_ok,
+            "load_shacl_shapes OK + all 5 enumeration terms present",
+            "" if terms_ok else "enumeration terms missing from emitted TTL")
+    except Exception as exc:  # noqa: BLE001
+        row("emit_loads_via_production_loader", False, "UNEXPECTED", str(exc))
+    try:
+        emit_shacl({k: v for k, v in verified.items()
+                    if k != "min_height_salva_casa_m"}, vocab, raw)
+        row("emit_refuses_incomplete_thresholds", False, "EMITTED_INCOMPLETE")
+    except EmitRefusedError:
+        row("emit_refuses_incomplete_thresholds", True, "EmitRefusedError")
+    try:
+        bad_vocab = {"enumeration": sorted(_ART1_ENUMERATION),
+                     "anchored": {**vocab["anchored"], "garage": "garage"}}
+        emit_shacl(verified, bad_vocab, raw)
+        row("emit_refuses_fabricated_vocab_token", False, "EMITTED_FABRICATED")
+    except EmitRefusedError:
+        row("emit_refuses_fabricated_vocab_token", True, "EmitRefusedError")
+    try:
+        ttl = emit_shacl(verified, vocab, raw)
+        stripped = "\n".join(l for l in ttl.splitlines() if "sh:minCount" not in l)
+        try:
+            verify_emitted_shapes(stripped, verified)
+            row("emit_tampered_ttl_refused_by_loader", False, "LOADED_MINCOUNT_STRIPPED")
+        except (ValueError, EmitRefusedError):
+            row("emit_tampered_ttl_refused_by_loader", True,
+                "loader raised on minCount-stripped TTL (ADR-008a guard)")
+    except Exception as exc:  # noqa: BLE001
+        row("emit_tampered_ttl_refused_by_loader", False, "UNEXPECTED", str(exc))
+
+    # Red-team round 3 pins: the tamper classes the tautological verifier missed.
+    try:
+        ttl = emit_shacl(verified, vocab, raw)
+        cases = [
+            ("emit_bar_tamper_refused",
+             ttl.replace("sh:minInclusive 2.70 ;", "sh:minInclusive 2.10 ;", 1)),
+            ("emit_wiring_tamper_refused",
+             ttl.replace("    sh:property legal:MinHeightHabitable_PS ;\n"
+                         "    sh:property legal:MinAeroRatio_PS .",
+                         "    sh:property legal:MinHeightHabitable_PS .", 1)),
+            ("emit_path_swap_refused",
+             ttl.replace("sh:path acc:aeroRatio", "sh:path acc:heightM", 1)),
+        ]
+        for case_id, tampered in cases:
+            if tampered == ttl:
+                row(case_id, False, "TAMPER_NOT_APPLIED")
+                continue
+            try:
+                verify_emitted_shapes(tampered, verified)
+                row(case_id, False, "TAMPER_VERIFIED_GREEN")
+            except (ValueError, EmitRefusedError) as exc:
+                row(case_id, True, "refused", str(exc)[:80])
+    except Exception as exc:  # noqa: BLE001
+        row("emit_bar_tamper_refused", False, "UNEXPECTED", str(exc))
+    # Caller-side float drift normalizes to the STATUTE's lexical bar (never leaks).
+    try:
+        drift = dict(verified, min_height_habitable_m=2.6999999999999997)
+        ttl = emit_shacl(drift, vocab, raw)
+        ok = "sh:minInclusive 2.70 ;" in ttl and "2.6999999999999997" not in ttl
+        verify_emitted_shapes(ttl, drift)
+        row("emit_normalizes_float_drift", ok,
+            "bar emitted as statutory lexical 2.70; drift never reaches the artifact")
+    except Exception as exc:  # noqa: BLE001
+        row("emit_normalizes_float_drift", False, "UNEXPECTED", str(exc))
+    # A corpus the numeric gate rejects (deleted / decoy-shadowed) can never emit.
+    variants = battery_variants(raw)
+    for case_id, vkey in (("emit_refuses_deleted_corpus", "V3_habitable_span_deleted"),
+                          ("emit_refuses_shadowed_corpus", "V1_coastal_decoy_shadow")):
+        try:
+            emit_shacl(verified, vocab, variants[vkey])
+            row(case_id, False, "EMITTED_FROM_REJECTED_CORPUS")
+        except EmitRefusedError as exc:
+            row(case_id, True, "EmitRefusedError", str(exc)[:80])
+    return rows
 
 
 def run_battery(raw: str) -> Tuple[int, int, List[dict]]:
@@ -707,6 +1329,16 @@ def run_battery(raw: str) -> Tuple[int, int, List[dict]]:
         mismatches += 0 if ok else 1
         rows.append({"variant": variant, "case": case_id, "expected": expected,
                      "got": got, "reason": v.reason, "detail": v.detail, "ok": ok})
+    for variant, case_id, vclaim, expected in vocab_battery():
+        v = validate_vocab_claim(vclaim, variants[variant])
+        got = "ACCEPT" if v.accepted else "REJECT"
+        ok = got == expected
+        mismatches += 0 if ok else 1
+        rows.append({"variant": variant, "case": case_id, "expected": expected,
+                     "got": got, "reason": v.reason, "detail": v.detail, "ok": ok})
+    for r in _trust_and_emit_rows(raw):
+        rows.append(r)
+        mismatches += 0 if r["ok"] else 1
     parity = _anchor_parity_row()
     rows.append(parity)
     mismatches += 0 if parity["ok"] else 1
@@ -789,9 +1421,11 @@ def main(argv=None) -> int:
     ap.add_argument("--report", type=Path, default=None, help="write a JSON report here")
     args = ap.parse_args(argv)
 
-    raw = CORPUS_PATH.read_text(encoding="utf-8")
+    # Corpus-trust boundary: the CLI ingests statute files ONLY through the manifest check.
+    raw = load_trusted_corpus(CORPUS_PATH)
     report: dict = {"policy_anchor": {"zero_human_coding_target": ZERO_HUMAN_CODING_TARGET,
-                                      "zero_human_review_claimed": ZERO_HUMAN_REVIEW_CLAIMED}}
+                                      "zero_human_review_claimed": ZERO_HUMAN_REVIEW_CLAIMED},
+                    "corpus_sha256": corpus_sha256(raw)}
 
     total, mismatches, rows = run_battery(raw)
     report["battery"] = {"cases": total, "mismatches": mismatches, "rows": rows}

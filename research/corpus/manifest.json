@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "normalization": "utf-8 text, CRLF->LF (platform-independent across git eol conversion)",
+  "created": "2026-07-03",
+  "adr": "ADR-014 (closes the ADR-013 poisoned-corpus open item)",
+  "_note": "Trust root for rule-pack/statute corpora. gate_spike.load_trusted_corpus() refuses (UntrustedCorpusError) any corpus file that is absent from this list (unlisted) or whose normalized sha256 mismatches (altered). HONEST LIMIT: this is a hash allow-list, NOT a cryptographic signature — an actor who can write a corpus can also rewrite this manifest; the audit boundary for that is git history/review, not this process. Update procedure: a corpus edit MUST re-run the span-quote gate battery + replay, then regenerate this manifest in the SAME commit — a manifest-only or corpus-only change is a red flag by construction.",
+  "trusted_corpora": {
+    "sandbox/rules/dm_1975_salva_casa.md": "d673b4cc1f508ffe759f3e098cb0403cab2c5d937a0cf46e7788d477efd7a55a",
+    "sandbox/rules/applicability.json": "5695c74641ffb06a8e5f411166a8ef426f13b5e592c58be7f397ecd76533c323",
+    "sandbox/rules/compiled/dm_1975_salva_casa.json": "564ca5def365e86d44022ac0a7b0770ecfe831c98617f7c2e9fd247391f4fe87",
+    "sandbox/ontology/dm1975_salvacasa.ttl": "3f481507dcab0cc5c74700da5d7a00d7d521fd3a89b1adcd33fc1cddc42342fd"
+  }
+}

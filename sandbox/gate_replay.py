@@ -5,13 +5,12 @@ Strategy §3.2.5 step 4 names the 37 `test_gate.py` pins as the recall floor of 
 span-quote gate. This harness extracts every pin into a structured fixture and replays
 it against gate_spike's four-layer protocol:
 
-  - 27 pins are PROTOCOL-MAPPABLE: 16 numeric-gate, 3 end-to-end wiring (mocked
-    extractor), 7 monostanza, 1 regression. Each maps to one or more claim-level
-    sub-cases with an expected ACCEPT/REJECT (or a structural/completeness assertion).
-  - 10 pins are STRUCTURALLY OUT-OF-SCOPE — 8 selection-vocabulary pins (the
-    applicability-class gate, strategy §3.2.4 type 6) and 2 compile-emission pins
-    (Stage 4-6 emitters). They are carried in the fixture with their reason, never
-    silently dropped, and they do NOT count toward the replay denominator.
+  - ALL 37 pins are now PROTOCOL-MAPPABLE: 16 numeric-gate, 3 end-to-end wiring
+    (mocked extractor), 7 monostanza, 1 regression, 8 selection-vocabulary (via the
+    vocabulary gate, strategy §3.2.4 type 6 — validate_vocab_claim), and 2
+    compile-emission (via the fail-closed SHACL emitter — emit_shacl +
+    verify_emitted_shapes round-tripping through orchestrator.load_shacl_shapes).
+    The out-of-scope class of the first replay round is EMPTY as of ADR-014.
   - 3 pins carry RE-MECHANIZED sub-cases per the §3.2.5 quotation-layer resolution:
     2 paraphrase accepts (aero, habitable — their literal clause text is never verbatim
     in the corpus and must stay REJECTED at L1; the same fact is accepted through a
@@ -38,7 +37,9 @@ sys.path.insert(0, str(_SANDBOX))
 
 import gate_spike as G  # noqa: E402  (spike-side import; production code untouched)
 
-LAW = (_SANDBOX / "rules" / "dm_1975_salva_casa.md").read_text(encoding="utf-8")
+# Corpus-trust boundary (ADR-014): the replay ingests the statute file ONLY through the
+# manifest check; every C_* mutation below is derived AFTER the trusted load.
+LAW = G.load_trusted_corpus(_SANDBOX / "rules" / "dm_1975_salva_casa.md")
 
 # Verbatim spans exactly as test_gate.py:47-50 defines them.
 _HAB = "L'altezza minima interna utile dei locali adibiti ad abitazione è fissata in **m 2,70**"
@@ -66,6 +67,13 @@ CORPORA = {
     "C_del38": LAW.replace("e non inferiore a **mq 38** se per\n> due persone", ""),  # :396
     "C_mq99": LAW.replace("non inferiore a **mq 28**",
                           "non inferiore a **mq 99**, e non inferiore a **mq 28**"),  # :419-420
+    "C_del_art1": LAW.replace(
+        "riducibile a **m 2,40** per i corridoi, i disimpegni in genere, i bagni,", "")
+        .replace("i gabinetti ed i ripostigli", ""),                            # :266-268
+    "C_dup_riducibile": LAW.replace(
+        "i gabinetti ed i ripostigli.»",
+        "i gabinetti ed i ripostigli.»\n> Inoltre riducibile a m 2,40 per i garage e le cantine.»",
+        1),                                                                     # :302-305
 }
 for _k, _v in CORPORA.items():
     assert _k == "C0" or _v != LAW, f"corpus mutation {_k} did not land"
@@ -176,20 +184,49 @@ pin("test_parse_rule_mocked_fabrication_rejects", "wiring", "wiring",
 pin("test_parse_rule_no_fallthrough_on_llm_error", "wiring", "wiring",
     check=lambda: _wiring_error_propagates())
 
-# --- selection gate (8): OUT OF SCOPE ------------------------------------------------
-_SEL_REASON = ("selection-VOCABULARY gate (statute-term anchoring of occupancy tokens); the "
-               "span-quote protocol carries no vocabulary layer — this is the "
-               "applicability-class gate, strategy §3.2.4 type 6, future spike scope")
-for _n in ("test_selection_accepts_art1_tokens", "test_selection_rejects_fabricated_token",
-           "test_selection_rejects_truncated_or_extended_token",
-           "test_selection_rejects_deleted_source", "test_selection_inherits_answer_key_exclusion",
-           "test_selection_cross_lingual_is_declared_debt"):
-    pin(_n, "selection", "out-of-scope", reason=_SEL_REASON)
-pin("test_selection_rejects_duplicate_injection", "selection", "out-of-scope",
-    reason=_SEL_REASON + " — NOTE: the injected duplicate carries the SAME value (2,40), so the "
-                         "numeric protocol correctly still accepts the accessory threshold on that "
-                         "corpus; only the vocabulary layer can see the term-set divergence")
-pin("test_selection_decoys_stay_out", "selection", "out-of-scope", reason=_SEL_REASON)
+# --- selection gate (8): the VOCABULARY GATE (strategy §3.2.4 type 6; ADR-014) ----------
+def _v(token, ontology_class, span) -> G.VocabClaim:
+    return G.VocabClaim(token=token, ontology_class=ontology_class, span=span)
+
+
+_DEBT_TOKENS = tuple(
+    g["hints"]
+    for g in json.loads(G.load_trusted_corpus(_SANDBOX / "rules" / "applicability.json"))
+    ["occupancy_classes"]["accessory"]["hint_groups"]
+    if g["provenance"] == "cross-lingual-glossary")[0]
+
+pin("test_selection_accepts_art1_tokens", "selection", "claims", validator="vocab", cases=[
+    ("C0", _v("corrid", "accessory", _ACC), "ACCEPT", "stem-drift corrid->corridoi"),
+    ("C0", _v("disimpegno", "accessory", _ACC), "ACCEPT", "stem-drift disimpegno->disimpegni"),
+    ("C0", _v("bagno", "accessory", _ACC), "ACCEPT", ""),
+    ("C0", _v("ripostiglio", "accessory", _ACC), "ACCEPT", ""),
+])
+pin("test_selection_rejects_fabricated_token", "selection", "claims", validator="vocab", cases=[
+    ("C0", _v("garage", "accessory", _ACC), "REJECT", "NO-INVENT"),
+    ("C0", _v("cucina", "accessory", _ACC), "REJECT", "NO-INVENT"),
+])
+pin("test_selection_rejects_truncated_or_extended_token", "selection", "claims",
+    validator="vocab", cases=[
+    ("C0", _v("bag", "accessory", _ACC), "REJECT", "stem-EQUALITY, not prefix"),
+    ("C0", _v("bagno_decoy", "accessory", _ACC), "REJECT", "suffix extension never anchors"),
+])
+pin("test_selection_rejects_deleted_source", "selection", "claims", validator="vocab", cases=[
+    ("C_del_art1", _v("corrid", "accessory", _ACC), "REJECT", "deleted enumeration, no backfill"),
+])
+pin("test_selection_inherits_answer_key_exclusion", "selection", "structural",
+    check=lambda: _vocab_answer_key_check())
+pin("test_selection_cross_lingual_is_declared_debt", "selection", "structural",
+    check=lambda: _vocab_debt_check())
+pin("test_selection_rejects_duplicate_injection", "selection", "claims", validator="vocab", cases=[
+    ("C_dup_riducibile", _v("corrid", "accessory", _ACC), "REJECT",
+     "second divergent term-set -> ambiguous enumeration (the numeric protocol correctly "
+     "still accepts the 2,40 threshold there; only the vocabulary layer sees the divergence)"),
+])
+pin("test_selection_decoys_stay_out", "selection", "claims", validator="vocab", cases=[
+    ("C0", _v("montani", "accessory", _ACC), "REJECT", ""),
+    ("C0", _v("alloggio monostanza", "accessory", _ACC), "REJECT", ""),
+    ("C0", _v("seismic", "accessory", _ACC), "REJECT", ""),
+])
 
 # --- monostanza gate (7) --------------------------------------------------------------
 pin("test_monostanza_oracle_accepts", "monostanza", "claims", remech=True, cases=[
@@ -237,13 +274,65 @@ pin("test_numeric_gate_unchanged_after_monostanza", "regression", "claims", case
     ("C0", _c(2.55, ">=", "m", _HAB), "REJECT", "montani 2,55 still rejected"),
 ])
 
-# --- compile pins (2): OUT OF SCOPE ---------------------------------------------------
-_CMP_REASON = ("compile-path emission (gate_verified_selection -> Rule clauses); the span-quote "
-               "protocol validates claims, it does not emit rule artifacts — Stage 4-6 scope")
-pin("test_compile_selection_is_gate_verified", "compile", "out-of-scope", reason=_CMP_REASON)
-pin("test_compile_selection_rejects_fabricated_token", "compile", "out-of-scope", reason=_CMP_REASON)
+# --- compile pins (2): the fail-closed SHACL EMITTER (ADR-014) --------------------------
+pin("test_compile_selection_is_gate_verified", "compile", "structural",
+    check=lambda: _emit_gate_verified_check())
+pin("test_compile_selection_rejects_fabricated_token", "compile", "structural",
+    check=lambda: _emit_fabricated_token_check())
 
 assert len(PINS) == 37, f"pin fixture must carry all 37 pins, has {len(PINS)}"
+
+_VERIFIED_ORACLE = {"min_height_habitable_m": 2.70, "min_height_accessory_m": 2.40,
+                    "min_height_salva_casa_m": 2.40, "aero_illuminating_ratio": 0.125}
+_VOCAB_ORACLE = {"enumeration": sorted(G._ART1_ENUMERATION),
+                 "anchored": {"corrid": "corridoi", "disimpegno": "disimpegni",
+                              "bagno": "bagni", "ripostiglio": "ripostigli"}}
+
+
+def _vocab_answer_key_check():
+    corpus = G.crosscheck_corpus(LAW)
+    ok1 = "exclude corridoi/bagni/ripostigli" not in corpus and "riducibile" in corpus
+    echo = G.validate_vocab_claim(_v("corrid", "accessory",
+                                     "exclude corridoi/bagni/ripostigli"), LAW)
+    real = G.validate_vocab_claim(_v("corrid", "accessory", _ACC), LAW)
+    ok = ok1 and not echo.accepted and real.accepted
+    return ok, (f"answer-key line excluded (echo={echo.reason}); Art.1 prose anchor "
+                f"retained (real={real.reason})")
+
+
+def _vocab_debt_check():
+    ok = "garage" in _DEBT_TOKENS
+    anchored = []
+    for tok in _DEBT_TOKENS:
+        v = G.validate_vocab_claim(_v(tok, "accessory", _ACC), LAW)
+        if v.accepted:
+            anchored.append(tok)
+    ok = ok and not anchored
+    return ok, (f"{len(_DEBT_TOKENS)} cross-lingual debt tokens, 0 anchored "
+                f"(declared debt is never statute-certified)"
+                + (f"; UNEXPECTEDLY ANCHORED: {anchored}" if anchored else ""))
+
+
+def _emit_gate_verified_check():
+    ttl = G.emit_shacl(_VERIFIED_ORACLE, _VOCAB_ORACLE, LAW)
+    G.verify_emitted_shapes(ttl, _VERIFIED_ORACLE)      # raises on any loader guard
+    terms = [t for t in G._ART1_ENUMERATION if t in ttl]
+    shapes = all(s in ttl for s in ("legal:AccessoryShape", "legal:HabitableBaselineShape",
+                                    "legal:HabitableSalvaCasaShape"))
+    prov = "corpus sha256" in ttl
+    ok = len(terms) == 5 and shapes and prov
+    return ok, (f"emitted TTL loads via load_shacl_shapes; {len(terms)}/5 enumeration terms; "
+                f"3 regime NodeShapes; corpus-hash provenance embedded")
+
+
+def _emit_fabricated_token_check():
+    try:
+        G.emit_shacl(_VERIFIED_ORACLE,
+                     {"enumeration": sorted(G._ART1_ENUMERATION),
+                      "anchored": {**_VOCAB_ORACLE["anchored"], "garage": "garage"}}, LAW)
+        return False, "emitter ACCEPTED a fabricated vocabulary token — NO-INVENT breached"
+    except G.EmitRefusedError as exc:
+        return True, f"EmitRefusedError: {str(exc)[:90]}"
 
 
 # --- mode implementations ----------------------------------------------------------------
@@ -327,8 +416,10 @@ def run_replay():
                          "result": "MATCH" if ok else "MISMATCH", "detail": note})
             continue
         sub, sub_ok = [], True
+        validator = (G.validate_vocab_claim if p.get("validator") == "vocab"
+                     else G.validate_claim)
         for corpus_key, claim, expected, note in p["cases"]:
-            v = G.validate_claim(claim, CORPORA[corpus_key])
+            v = validator(claim, CORPORA[corpus_key])
             got = "ACCEPT" if v.accepted else "REJECT"
             case_ok = got == expected
             sub_ok &= case_ok
@@ -370,6 +461,11 @@ LIVE_TRUTH = {
     "C_del28": _truth_without("min_surface_monostanza_1p"),
     "C_del38": _truth_without("min_surface_monostanza_2p"),
     "C_mq99": _truth_without("min_surface_monostanza_1p"),
+    # Art.1 enumeration prose deleted -> the accessory height anchor is gone with it.
+    "C_del_art1": _truth_without("min_height_accessory_m"),
+    # Duplicate 'riducibile' injection carries the SAME 2,40 -> numeric truth unchanged
+    # (only the VOCABULARY layer sees the term-set divergence; pinned in the vocab pins).
+    "C_dup_riducibile": _BASE_TRUTH,
 }
 
 
@@ -418,7 +514,7 @@ def main(argv=None) -> int:
 
     rep = run_replay()
     print(f"== 37-PIN REPLAY (deterministic) — {rep['mapped']} mapped, "
-          f"{rep['out_of_scope']} structurally out-of-scope ==")
+          f"{rep['out_of_scope']} out-of-scope (ADR-014: the out-of-scope class is empty) ==")
     for r in rep["rows"]:
         mark = {"MATCH": "ok ", "MATCH-REMECHANIZED": "ok*", "OUT-OF-SCOPE": "-- "}.get(
             r["result"], "XX ")
