@@ -1,0 +1,96 @@
+ACC Neurosymbolic Core
+Copyright 2026 the ACC Neurosymbolic Core authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+THIRD-PARTY DEPENDENCIES
+================================================================================
+
+This product depends on the following third-party components. None of their
+source code is included in this repository; all are consumed as ordinary,
+user-replaceable package dependencies declared in sandbox/requirements.txt.
+
+1. IfcOpenShell (ifcopenshell, 0.8.5 at time of writing)
+   License: GNU Lesser General Public License v3.0 or later (LGPL-3.0-or-later)
+   Homepage: https://ifcopenshell.org/
+   Role: IFC (ISO 16739) parsing and quantity extraction.
+   See the "LGPL-3.0 BOUNDARY STATEMENT" section below.
+
+2. rdflib (7.6.0)
+   License: BSD-3-Clause
+   Homepage: https://github.com/RDFLib/rdflib
+   Role: RDF graph store and SPARQL 1.1 engine (occupancy ontology, A-Box).
+
+3. pySHACL (pyshacl, 0.31.0)
+   License: Apache-2.0
+   Homepage: https://github.com/RDFLib/pySHACL
+   Role: SHACL validation of the declarative legal comparison layer.
+   Transitive dependencies (owlrl — W3C Software and Document Notice and
+   License; prettytable; packaging) are inventoried in THIRD_PARTY_LICENSES.
+
+4. pydantic (2.x)
+   License: MIT
+   Homepage: https://github.com/pydantic/pydantic
+   Role: rule schema definition and JSON-schema validation.
+
+5. requests (2.x)
+   License: Apache-2.0
+   Homepage: https://github.com/psf/requests
+   Role: HTTP client for the optional local-LLM (Ollama) neuro path.
+
+6. Ollama (external, optional)
+   Not a linked library dependency: Ollama runs as a separate local process
+   and is reached over localhost HTTP. It is neither imported, linked, nor
+   distributed with this product. Model weights (e.g. llama3.1:8b) are
+   governed by their own licenses and are not distributed with this product.
+
+Specification licenses (implemented, not forked — no specification text is
+redistributed by this product):
+- buildingSMART IDS (Information Delivery Specification) v1.0: CC-BY-ND-4.0.
+- buildingSMART IFC schema (ISO 16739-1): CC-BY-ND-4.0.
+- buildingSMART bSDD dictionary content: per-dictionary licenses (SPDX
+  declared by each publisher).
+
+================================================================================
+LGPL-3.0 BOUNDARY STATEMENT (ifcopenshell)
+================================================================================
+
+Working interpretation, recorded pending counsel review (see
+research/COUNSEL_QUESTIONS.md); this section is a compliance posture,
+not legal advice.
+
+This product imports ifcopenshell from Python at runtime, which we treat as
+analogous to dynamic linking. The LGPL-3.0-or-later obligations are honored
+as follows:
+
+(a) USER-REPLACEABLE DEPENDENCY. ifcopenshell is consumed exclusively as an
+    ordinary pip/conda package dependency. It is never modified, vendored,
+    statically bundled, or fused into a single-file frozen binary (e.g.
+    PyInstaller one-file mode is prohibited for any distribution of this
+    product). A user can replace the ifcopenshell package with their own
+    build at any time.
+
+(b) LICENSE TEXT AND ATTRIBUTION. This NOTICE identifies ifcopenshell and its
+    license; any binary or on-premise distribution of this product must ship
+    the LGPL-3.0 license text alongside it.
+
+(c) NO REVERSE-ENGINEERING PROHIBITION. No license or contract term of this
+    product forbids reverse engineering for the purpose of debugging
+    modifications to ifcopenshell.
+
+(d) ARCHITECTURAL DECOUPLING AT THE DATA/GRAPH EDGE (openBIM boundary).
+    Proprietary rule-pack content is decoupled from ifcopenshell at a pure
+    data boundary: rule packs are declarative artifacts (SHACL/Turtle shapes,
+    and — per the openBIM boundary mapping in
+    research/STRATEGIC_MOAT_ANALYSIS.md §1.5 — IDS documents referencing
+    bSDD-published semantics at the interoperability edge). Rule packs
+    contain no code, do not import or link against ifcopenshell, and consume
+    only the extracted feature graph (RDF A-Box) that the extractor emits.
+    This decoupling is designed to keep rule-pack content clearly outside
+    the derivative-work boundary of the LGPL-licensed library under the
+    working interpretation above; it complements — and does not substitute
+    for — the LGPL compliance mechanics in (a)-(c), which attach to the
+    runtime that DOES import ifcopenshell.
+
+================================================================================
