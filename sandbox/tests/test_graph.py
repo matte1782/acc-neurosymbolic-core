@@ -28,7 +28,7 @@ import json
 import sys
 from pathlib import Path
 
-from rdflib import Graph, RDFS
+from rdflib import Graph, Literal, RDFS
 
 _SANDBOX = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_SANDBOX))  # import sandbox/graph.py + parser.py
@@ -287,6 +287,44 @@ def test_m4_tokenized_classification() -> None:
         _check(f"m4[{name!r}]=={want}", got == want)
 
 
+# ============================ QW-1 / ADR-015 — table/SPARQL differential pin ==============
+# The default runtime path is the match table materialized from _TOKEN_QUERY (graph.py QW-1
+# block); the live SPARQL engine path stays selectable (ACC_GRAPH_CLASSIFIER=sparql) as the
+# reference implementation. These checks pin (a) label-level equivalence of the two paths over
+# the full hint vocabulary + adversarial variants, and (b) the fingerprint cache guard — an
+# in-place mutation invalidates the table EVEN when the triple count is unchanged (the
+# equal-count remove+add swap a bare len() guard provably misses — red-teamed).
+def test_qw1_table_sparql_differential() -> None:
+    import os
+    g = G.build_ontology()
+    labels = [("Soggiorno con bagno", ""), ("Messeraum", ""), ("Vestibolo", "3"),
+              ("Zzqxv-no-hint", "12345"), (None, None), ("BAGNO", "RIPOSTIGLIO"),
+              ("Büro 2. OG", "Gästezimmer"), ("Wohnen mit Abstellraum", "")]
+    for _, _, ht in g.triples((None, G.ACC.hintText, None)):
+        h = str(ht)
+        labels += [(h, ""), (h + "zimmer", ""), (h[:-1] if len(h) > 1 else h, ""), ("x" + h, "")]
+    mismatches = 0
+    for name, longname in labels:
+        fast = G.occupancy_via_graph(name, longname, graph=g)
+        os.environ["ACC_GRAPH_CLASSIFIER"] = "sparql"
+        try:
+            slow = G.occupancy_via_graph(name, longname, graph=g)
+        finally:
+            os.environ.pop("ACC_GRAPH_CLASSIFIER", None)
+        if fast != slow:
+            mismatches += 1
+    _check(f"qw1_differential_{len(labels)}_labels_zero_divergence", mismatches == 0)
+
+    # fingerprint guard: an equal-count remove+add swap must invalidate the cached table.
+    g2 = G.build_ontology()
+    _check("qw1_warm_cache_divergence_accessory",
+           G.occupancy_via_graph("vestibolo", "", graph=g2) == "accessory")
+    g2.remove((G.DIVERGENCE_NODE, RDFS.subClassOf, G._DIVERGENCE_PARENT))
+    g2.add((G.ACC["PadNode"], G.ACC.hintText, Literal("zzqpadhint")))  # len unchanged net
+    _check("qw1_equal_count_mutation_invalidates",
+           G.occupancy_via_graph("vestibolo", "", graph=g2) == "unknown")
+
+
 def main() -> int:
     test_reproduces_oracle_occupancy()
     test_divergence_room_load_bearing()
@@ -296,6 +334,7 @@ def main() -> int:
     test_room_in_store_globalid_exact()
     test_canary_402_403_unknown_via_query()
     test_m4_tokenized_classification()
+    test_qw1_table_sparql_differential()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

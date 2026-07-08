@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Stage 4b — graph layer for occupancy/applicability discovery.
 
-The room->occupancy decision is answered by a **SPARQL 1.1 query over an rdflib in-memory
-ontology** (`occupancy_via_graph`), the seam that replaces `checker.classify()`'s Python substring
-branch in Task 2. This module is the read-only graph layer (Task 1): it builds + caches the
+The room->occupancy decision is answered by the **match table materialized from a SPARQL-1.1-
+specified query over an rdflib in-memory ontology** (`occupancy_via_graph`; the live per-token
+SPARQL path remains runtime-selectable via ACC_GRAPH_CLASSIFIER=sparql — QW-1/ADR-015), the seam
+that replaces `checker.classify()`'s Python substring branch in Task 2. This module is the read-only graph layer (Task 1): it builds + caches the
 ontology and answers the query; it does NOT import `checker` (one-directional dependency:
 `checker -> graph`, never back — and `checker`'s module-top `import ifcopenshell` sys.exits when the
 wheel is absent, checker.py:27-37, so the neuro/graph layer must stay independent).
@@ -12,7 +13,9 @@ HONESTY CONTRACT (baseline §1 / §6 / §7; ADR-006). On the 3 current fixtures 
 flat-substring-decidable**, so a graph seeded from the same hints is **verdict-equivalent to the
 flat table BY CONSTRUCTION** — reproducing the controls proves a *faithful copy of classify()*, NOT
 correctness. What this layer actually delivers, and all it claims, is exactly three things:
-  1. the architectural seam (room->occupancy via a SPARQL query over a store);
+  1. the architectural seam (room->occupancy via a SPARQL-SPECIFIED query over a store; since
+     QW-1/ADR-015 the default runtime path is the table materialized from that query, with the
+     live engine path selectable and differentially pinned equivalent);
   2. **bounded** statute-anchoring: 4 of 51 occupancy tokens (the Art.1 enumeration corrid/
      disimpegno/bagno/ripostiglio) are checked against the statute prose; the other 47 are
      `classify()`-derived, reproduced-not-independently-verified, cross-lingual = declared debt;
@@ -32,6 +35,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import weakref
 from typing import Optional
 
 from rdflib import Graph, Literal, Namespace, RDF, RDFS
@@ -63,14 +67,19 @@ _CLASS_URI = {"accessory": ACC.Accessory, "habitable": ACC.Habitable}
 # 'wohnzimmer' starts with 'wohn'; 'badezimmer' with 'bad') while rejecting the internal fragments
 # CONTAINS admitted ('messeraum' does NOT start with 'ess'); cross-word collisions are handled by
 # tokenisation + the caller's aggregation. Accessory-first WITHIN a token: priority BIND (accessory
-# 0 < habitable 1) + ORDER BY + LIMIT 1. The token is injected via initBindings (never interpolated)
-# so a name with SPARQL-illegal characters is safe.
+# 0 < habitable 1) + ORDER BY + LIMIT 1. Branch (a) FILTERs ?cls to the two known classes
+# (ADR-015): without it a hypothetical third broaderTerm class would enter as a prio-1 row and
+# could SHADOW a co-matching habitable row under the spec-UNDEFINED ORDER BY tie + LIMIT 1 —
+# unreachable from build_ontology (only Accessory/Habitable are ever asserted), but the reference
+# query must be well-defined for the table-equivalence contract below. The token is injected via
+# initBindings (never interpolated) so a name with SPARQL-illegal characters is safe.
 _TOKEN_QUERY = """
 PREFIX acc: <https://acc.local/ontology#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?cls (IF(?cls = acc:Accessory, 0, 1) AS ?prio) WHERE {
   {
     ?h acc:hintText ?ht ; acc:broaderTerm ?cls .
+    FILTER(?cls IN (acc:Accessory, acc:Habitable))
     FILTER(STRSTARTS(?tok, LCASE(STR(?ht))))
   }
   UNION
@@ -89,6 +98,109 @@ LIMIT 1
 _TOKEN_SPLIT = re.compile(r"[^a-zà-ÿ]+")
 
 _ONTOLOGY_CACHE: "Optional[Graph]" = None
+
+# =========================================================================================
+# QW-1 / Phase A-1 (ADR-015): _TOKEN_QUERY above remains the SEMANTIC SPEC, but firing the
+# rdflib SPARQL engine once per token per space measured 3.86 s of Institute's wall time
+# (70-77%, STRATEGIC_MOAT_ANALYSIS §3.1.2). Pair-level (Name, LongName) memoization is
+# measured-dead (Institute's 82 pairs are ALL distinct — §3.1.7 QW-1), so the sanctioned
+# lever is a ONE-TIME materialization of the query's match table from the (static per
+# run) ontology — prefix lists per class plus the typeLabel/subClassOf+ closure — then
+# per-token Python prefix matching with a token-level memo. Verdict-equivalence is by
+# construction (the derivation mirrors the two UNION branches; accessory-priority
+# `ORDER BY ?prio LIMIT 1` maps to check-accessory-first) and is differentially asserted
+# against the live SPARQL path (ADR-015 evidence: tests/test_graph.py differential pin +
+# the fuzz record in the ADR; set ACC_GRAPH_CLASSIFIER=sparql to force the legacy engine
+# path at runtime). The derived table is cached per graph OBJECT IDENTITY (id() +
+# weakref.finalize eviction — NOT rdflib Graph equality, which compares only the graph
+# IDENTIFIER and would alias two same-identifier graphs) and guarded by a FINGERPRINT of
+# the classification-relevant triples (hintText/broaderTerm/typeLabel/subClassOf,
+# order-independent XOR of triple hashes), so ANY in-place mutation of those triples —
+# including an equal-count remove+add swap, which a bare len() guard provably misses —
+# invalidates it. The fingerprint pass is ~100 triple lookups per call: noise next to
+# the ~47 ms/space SPARQL cost it replaces.
+# =========================================================================================
+_DERIVED_CACHE: dict = {}          # id(graph) -> (fingerprint, table, token_memo)
+_RELEVANT_PREDICATES = (ACC.hintText, ACC.broaderTerm, ACC.typeLabel, RDFS.subClassOf)
+
+
+def _table_fingerprint(g: Graph) -> int:
+    """Order-independent fingerprint of the classification-relevant triples."""
+    acc = 0
+    for pred in _RELEVANT_PREDICATES:
+        for t in g.triples((None, pred, None)):
+            acc ^= hash(t)
+    return acc
+
+
+def _derive_match_table(g: Graph) -> tuple:
+    """Materialize _TOKEN_QUERY's match table: (accessory_prefixes, habitable_prefixes).
+
+    Branch (a): every ``:hintText`` whose ``:broaderTerm`` is acc:Accessory/acc:Habitable —
+    any OTHER broaderTerm class is excluded, matching the query's branch-(a) FILTER (added
+    with this table: pre-FILTER, an other-class row could shadow a co-matching habitable
+    row under the spec-undefined ORDER BY tie; no such class exists in build_ontology's
+    output — graph.py's _CLASS_URI is the whole codomain). Branch (b): every
+    ``:typeLabel`` whose node reaches acc:Accessory/acc:Habitable via ``rdfs:subClassOf+``
+    (transitive closure walked iteratively). Prefixes are lowercased ONCE here — the query
+    applies LCASE per evaluation; both equal ``str.lower()`` on this charset."""
+    acc_p, hab_p = [], []
+    for hn, _, ht in g.triples((None, ACC.hintText, None)):
+        for _, _, cls in g.triples((hn, ACC.broaderTerm, None)):
+            if cls == ACC.Accessory:
+                acc_p.append(str(ht).lower())
+            elif cls == ACC.Habitable:
+                hab_p.append(str(ht).lower())
+    for rt, _, tl in g.triples((None, ACC.typeLabel, None)):
+        seen, stack = set(), [rt]
+        while stack:
+            node = stack.pop()
+            for _, _, parent in g.triples((node, RDFS.subClassOf, None)):
+                if parent not in seen:
+                    seen.add(parent)
+                    stack.append(parent)
+        if ACC.Accessory in seen:
+            acc_p.append(str(tl).lower())
+        if ACC.Habitable in seen:
+            hab_p.append(str(tl).lower())
+    return tuple(acc_p), tuple(hab_p)
+
+
+def _match_table(g: Graph) -> tuple:
+    """Per-graph-identity cached ``(table, token_memo)``, invalidated whenever the
+    fingerprint of the classification-relevant triples changes."""
+    key = id(g)
+    fp = _table_fingerprint(g)
+    ent = _DERIVED_CACHE.get(key)
+    if ent is None or ent[0] != fp:
+        if ent is None:            # first entry for this identity: evict when g is GC'd
+            weakref.finalize(g, _DERIVED_CACHE.pop, key, None)
+        ent = (fp, _derive_match_table(g), {})
+        _DERIVED_CACHE[key] = ent
+    return ent[1], ent[2]
+
+
+def _classify_token_table(tok: str, table: tuple) -> "Optional[str]":
+    acc_p, hab_p = table
+    if any(tok.startswith(p) for p in acc_p):    # accessory priority == ORDER BY ?prio LIMIT 1
+        return "accessory"
+    if any(tok.startswith(p) for p in hab_p):
+        return "habitable"
+    return None
+
+
+def _classify_token_sparql(g: Graph, tok: str) -> "Optional[str]":
+    """The legacy per-token SPARQL path — kept as the REFERENCE implementation for
+    differential verification (and forced via ACC_GRAPH_CLASSIFIER=sparql)."""
+    rows = list(g.query(_TOKEN_QUERY, initBindings={"tok": Literal(tok)}))
+    if not rows:
+        return None
+    cls = rows[0][0]
+    if cls == ACC.Accessory:
+        return "accessory"
+    if cls == ACC.Habitable:
+        return "habitable"
+    return None
 
 
 def build_ontology(applicability_path: "Optional[str]" = None,
@@ -184,7 +296,9 @@ def _ontology() -> Graph:
 
 
 def occupancy_via_graph(name, long_name, graph: "Optional[Graph]" = None) -> str:
-    """Answer room -> {'accessory'|'habitable'|'unknown'} via per-TOKEN SPARQL over the ontology.
+    """Answer room -> {'accessory'|'habitable'|'unknown'} by per-token classification against the
+    match table materialized from _TOKEN_QUERY's semantics (one-time per graph, token-memoized;
+    QW-1/ADR-015). ACC_GRAPH_CLASSIFIER=sparql forces the per-token SPARQL reference path.
 
     M-4 fix (code audit). The old whole-label CONTAINS misclassified mixed/compound names: e.g.
     'Soggiorno con bagno' (a habitable living room) classified 'accessory' merely because the string
@@ -211,19 +325,26 @@ def occupancy_via_graph(name, long_name, graph: "Optional[Graph]" = None) -> str
     if not _has_ontology(g):
         raise RuntimeError(
             "occupancy_via_graph: empty/failed ontology — fail-closed (RAISE, not 'unknown')")
+    # QW-1/ADR-015: tokens are classified against the materialized match table (one-time
+    # per graph, token-memoized) instead of one SPARQL engine invocation per token; the
+    # query above stays the semantic spec and the runtime-selectable reference path.
+    use_sparql = os.environ.get("ACC_GRAPH_CLASSIFIER") == "sparql"
+    if not use_sparql:
+        table, memo = _match_table(g)
     label = " ".join(str(x or "") for x in (name, long_name)).lower()
     classes = set()
     for tok in _TOKEN_SPLIT.split(label):
         if not tok:
             continue
-        rows = list(g.query(_TOKEN_QUERY, initBindings={"tok": Literal(tok)}))
-        if not rows:
-            continue
-        cls = rows[0][0]
-        if cls == ACC.Accessory:
-            classes.add("accessory")
-        elif cls == ACC.Habitable:
-            classes.add("habitable")
+        if use_sparql:
+            cls = _classify_token_sparql(g, tok)
+        elif tok in memo:
+            cls = memo[tok]
+        else:
+            cls = _classify_token_table(tok, table)
+            memo[tok] = cls
+        if cls is not None:
+            classes.add(cls)
     if not classes:
         return "unknown"
     if classes == {"accessory"}:
