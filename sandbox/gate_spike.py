@@ -571,14 +571,12 @@ _ART1_ENUMERATION = frozenset({"corridoi", "disimpegni", "bagni", "gabinetti", "
 # Closed class lexicon: the Art.1 enumeration maps to exactly one ontology class.
 _VOCAB_CLASSES = {"accessory": "acc:AccessorySpace"}
 # CLOSED INFLECTION LEXICON (red-team blocker fix): bare vowel-run stem-equality admits
-# invented colliders ('bagnio', 'corridoia', 'gabinetta' all stem-equal real terms). The
-# spike's tokens are LLM-extracted UNTRUSTED input (unlike production, where tokens come
-# from the integrity-pinned applicability.json), so stem-equality alone is not enough
-# here: after the stem matches, the token must ALSO be one of the term's closed admissible
-# inflections (plural / regular singular / the table's canonical truncated hint). This is
-# a spike-layer ADDITION on top of the parity-pinned stem semantics — parser.py's own
-# _it_stem/stem-equality are untouched (their tokens are table-pinned, not attacker-
-# reachable); a coordinated production hardening is recorded in ADR-014 as follow-up.
+# invented colliders ('bagnio', 'corridoia', 'gabinetta' all stem-equal real terms).
+# After the stem matches, the token must ALSO be one of the term's closed admissible
+# inflections (plural / regular singular / the table's canonical truncated hint).
+# ADR-016: the coordinated production hardening LANDED — parser.py now carries the same
+# _TERM_INFLECTIONS check inside verify_accessory_selection_against_text; the parity row
+# below diffs the two tables so they can never drift.
 _TERM_INFLECTIONS = {
     "corridoi":   frozenset({"corridoi", "corridoio", "corrid"}),
     "disimpegni": frozenset({"disimpegni", "disimpegno", "disimpegn"}),
@@ -697,98 +695,299 @@ class EmitRefusedError(RuntimeError):
     """Emission refused: incomplete/unverified inputs can never become a rule pack."""
 
 
-def _corpus_bar_decimal(corpus: str, key: str):
-    """The statute's OWN lexical value for an anchored key, as an exact Decimal
+def _corpus_bar_decimal(corpus: str, anchor_pattern: str, is_fraction: bool = False):
+    """The statute's OWN lexical value for an anchored bar, as an exact Decimal
     (unique-or-None over the demarked, answer-key-excluded corpus — same discipline as
-    _anchor_values, but preserving the lexical form: '2,70' -> Decimal('2.70'))."""
-    from decimal import Decimal as _D
-    found = re.findall(ANCHORS[key], _demark(crosscheck_corpus(corpus)), re.S | re.I)
-    if key == "aero_illuminating_ratio":
-        vals = {_D(a) / _D(b) for a, b in found}
-    else:
-        vals = {_D(str(g).replace(",", ".")) for g in found}
+    _anchor_values, but preserving the lexical form: '2,70' -> Decimal('2.70')).
+
+    Fail-closed on a malformed anchor (ADR-016 red-team): the capture-group count must
+    match the fraction flag exactly — 2 groups iff is_fraction, else 1 — or the caller's
+    corpus re-derivation would silently miscompute (a 1-group fraction anchor unpacked
+    '28' char-by-char to 2/8=0.25) or crash raw. A group-count mismatch RAISES
+    EmitRefusedError, never a wrong-but-plausible bar."""
+    from decimal import Decimal as _D, InvalidOperation
+    want = 2 if is_fraction else 1
+    if re.compile(anchor_pattern).groups != want:
+        raise EmitRefusedError(
+            f"emission refused: anchor {anchor_pattern!r} has "
+            f"{re.compile(anchor_pattern).groups} capture group(s), needs {want} for "
+            f"{'a fraction' if is_fraction else 'a scalar'} bar (malformed anchor)")
+    found = re.findall(anchor_pattern, _demark(crosscheck_corpus(corpus)), re.S | re.I)
+    try:
+        if is_fraction:
+            vals = {_D(a) / _D(b) for a, b in found}
+        else:
+            vals = {_D(str(g).replace(",", ".")) for g in found}
+    except (InvalidOperation, ZeroDivisionError, ValueError) as exc:
+        raise EmitRefusedError(f"emission refused: anchor {anchor_pattern!r} matched a "
+                               f"non-numeric/degenerate value ({exc})")
     return next(iter(vals)) if len(vals) == 1 else None
 
 
-_EMIT_KEYS = ("min_height_habitable_m", "min_height_accessory_m",
-              "min_height_salva_casa_m", "aero_illuminating_ratio")
-_EMIT_SEEALSO = {
-    "MinHeightHabitable_PS": "legal:DM_1975_Abitabilita",
-    "MinHeightAccessory_PS": "legal:DM_1975_Abitabilita",
-    "MinHeightSalvaCasa_PS": "legal:DPR380_art24_SalvaCasa",
-    "MinAeroRatio_PS": "legal:DM_1975_Abitabilita",
+# --- RULE-PACK SPEC (Track B Stage 4, ADR-016): the emitter is now DATA-driven ---------
+# A pack is described declaratively; the emitter validates the spec, re-derives every bar
+# from the pack's OWN corpus anchors, and serializes. The DM-1975 pack below is the same
+# artifact the pinned emitter produced; a regional/local pack is just another spec.
+# INJECTION SAFETY (fail-closed, red-team-by-design): the pinned emitter was injection-
+# safe because every emitted string was hardcoded; a generalized emitter takes spec
+# strings into Turtle, so URI local names must match _URI_LOCAL_RE and literals must pass
+# _safe_literal (no double quote, backslash, or control characters) — anything else
+# REFUSES emission rather than escaping (surface the weirdness, never launder it).
+from dataclasses import dataclass as _dataclass, field as _field  # noqa: E402
+
+
+_URI_LOCAL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ACC_PATH_RE = re.compile(r"^acc:[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_literal(s: str) -> bool:
+    return isinstance(s, str) and s != "" and '"' not in s and "\\" not in s \
+        and not any(ord(c) < 32 for c in s)
+
+
+@_dataclass(frozen=True)
+class PropertyShapeSpec:
+    ps_name: str              # stable URI local name, e.g. "MinHeightHabitable_PS"
+    path: str                 # "acc:heightM" | "acc:aeroRatio" | any acc: measurement path
+    key: str                  # verified-claims key this bar binds to
+    message_template: str     # value-carrying sh:message ("... {v} ...", ADR-008)
+    see_also: str             # provision local name (rdfs:seeAlso -> legal:<see_also>)
+    anchor_pattern: str       # corpus re-derivation anchor (group 1 = value; (a,b) fraction)
+    anchor_is_fraction: bool = False
+
+
+@_dataclass(frozen=True)
+class NodeShapeSpec:
+    shape_name: str           # e.g. "AccessoryShape"
+    target_class: str         # acc: class local name (must be declared in the pack)
+    property_shapes: tuple = ()   # ps_name references
+
+
+@_dataclass(frozen=True)
+class RulePackSpec:
+    pack_id: str
+    provisions: dict          # provision local name -> rdfs:label
+    classes: dict             # class local name -> rdfs:comment (may carry {enumeration})
+    property_shapes: tuple = ()
+    node_shapes: tuple = ()
+    vocabulary: "Optional[str]" = None   # 'art1_accessory' wires the selection-vocabulary gate
+
+
+def _validate_spec(spec: RulePackSpec, verified: dict) -> None:
+    """Structural + injection-safety validation. Any miss REFUSES emission."""
+    ps_names = [p.ps_name for p in spec.property_shapes]
+    if not ps_names or len(ps_names) != len(set(ps_names)):
+        raise EmitRefusedError("spec refused: empty or duplicate property-shape names")
+    ns_names = [n.shape_name for n in spec.node_shapes]
+    if not ns_names or len(ns_names) != len(set(ns_names)):
+        raise EmitRefusedError("spec refused: empty or duplicate node-shape names "
+                               "(RDF would merge same-named shapes onto one subject)")
+    for nm in ([spec.pack_id] + ps_names + ns_names
+               + list(spec.provisions) + list(spec.classes)):
+        if not _URI_LOCAL_RE.match(nm or ""):
+            raise EmitRefusedError(f"spec refused: {nm!r} is not a safe URI local name")
+    for text in (list(spec.provisions.values()) + list(spec.classes.values())
+                 + [p.message_template for p in spec.property_shapes]):
+        if not _safe_literal(text):
+            raise EmitRefusedError(f"spec refused: unsafe literal {text!r} (quote/backslash/"
+                                   f"control chars never reach Turtle — fail-closed)")
+    referenced_props = set()
+    targeted_classes = set()
+    for n in spec.node_shapes:
+        if n.target_class not in spec.classes:
+            raise EmitRefusedError(f"spec refused: {n.shape_name} targets undeclared class "
+                                   f"{n.target_class!r}")
+        if not n.property_shapes:
+            raise EmitRefusedError(f"spec refused: {n.shape_name} carries no property shapes "
+                                   f"(vacuous conformance by construction)")
+        for ps in n.property_shapes:
+            if ps not in ps_names:
+                raise EmitRefusedError(f"spec refused: {n.shape_name} references unknown "
+                                       f"property shape {ps!r}")
+            referenced_props.add(ps)
+        targeted_classes.add(n.target_class)
+    if referenced_props != set(ps_names):
+        raise EmitRefusedError(f"spec refused: unwired property shapes "
+                               f"{sorted(set(ps_names) - referenced_props)}")
+    if targeted_classes != set(spec.classes):
+        raise EmitRefusedError(f"spec refused: undeclared-or-untargeted classes "
+                               f"{sorted(set(spec.classes) ^ targeted_classes)} — an "
+                               f"untargeted class conforms vacuously (ADR-008 class)")
+    for p in spec.property_shapes:
+        if not _ACC_PATH_RE.match(p.path):
+            raise EmitRefusedError(f"spec refused: {p.ps_name} path {p.path!r} outside acc:")
+        if "{v}" not in p.message_template:
+            raise EmitRefusedError(f"spec refused: {p.ps_name} message lacks the {{v}} slot "
+                                   f"(a message must carry the live value, ADR-008)")
+        # {v} is the ONLY admissible template field: emission substitutes it by literal
+        # string replace (no str.format), so a hostile '{v.__class__.__doc__}' cannot
+        # reach a format-field re-introducing a quote/newline past _safe_literal.
+        if re.sub(r"\{v\}", "", p.message_template).count("{") or \
+                re.sub(r"\{v\}", "", p.message_template).count("}"):
+            raise EmitRefusedError(f"spec refused: {p.ps_name} message carries a template "
+                                   f"field other than {{v}} — injection-safety refusal")
+        if p.see_also not in spec.provisions:
+            raise EmitRefusedError(f"spec refused: {p.ps_name} cites undeclared provision "
+                                   f"{p.see_also!r}")
+        if p.key not in verified:
+            raise EmitRefusedError(f"spec refused: {p.ps_name} binds unverified key {p.key!r}")
+
+
+# The canonical acc: measurement path each production *_PS key MUST carry — the runtime
+# routes verdicts by sh:path (orchestrator.verdicts_from_report), so a name-compatible
+# spec that re-points MinAeroRatio_PS to acc:heightM would corrupt every verdict while
+# self-verifying green. A production-slot-compatible pack is pinned to these (ADR-016).
+_CANONICAL_KEY_PATH = {
+    "min_height_habitable_m": "acc:heightM", "min_height_accessory_m": "acc:heightM",
+    "min_height_salva_casa_m": "acc:heightM", "aero_illuminating_ratio": "acc:aeroRatio",
 }
-_EMIT_PATHS = {
-    "MinHeightHabitable_PS": "acc:heightM", "MinHeightAccessory_PS": "acc:heightM",
-    "MinHeightSalvaCasa_PS": "acc:heightM", "MinAeroRatio_PS": "acc:aeroRatio",
-}
 
 
-def emit_shacl(verified: dict, vocab: dict, corpus_text: str) -> str:
-    """Serialize gate-verified thresholds + vocabulary into loadable SHACL Turtle.
+def _is_production_compatible(spec: RulePackSpec) -> bool:
+    sys.path.insert(0, str(_SANDBOX))
+    import orchestrator as _orch
+    std_slots = {ps for ps, _a, _t in _orch._THRESHOLD_SLOTS}
+    std_keys = {a for _p, a, _t in _orch._THRESHOLD_SLOTS}
+    return ({p.ps_name for p in spec.property_shapes} == std_slots
+            and {p.key for p in spec.property_shapes} == std_keys
+            and set(spec.classes) == set(_orch.TARGET_CLASSES))
 
-    `verified`: {the 4 numeric keys: value} — every key mandatory, values finite and > 0.
-    `vocab`:    validate_vocab_claim-shaped result set: {'enumeration': [5 terms],
-                'anchored': {token: term}} — the full pinned 5-set mandatory.
-    `corpus_text`: the trusted corpus the values were verified against; its sha256 is
-                embedded as emission provenance."""
+
+def _pin_production_paths(spec: RulePackSpec) -> None:
+    """A pack that reuses the production *_PS URIs/keys/classes MUST also use their
+    canonical acc: paths — else it would route through the production loader while
+    silently mis-binding a bar to the wrong measurement (ADR-016 red-team)."""
+    if not _is_production_compatible(spec):
+        return
+    for p in spec.property_shapes:
+        want = _CANONICAL_KEY_PATH.get(p.key)
+        if want and p.path != want:
+            raise EmitRefusedError(
+                f"spec refused: production-slot pack re-points {p.ps_name} ({p.key}) to "
+                f"{p.path!r} but the runtime routes verdicts by path; canonical is {want!r}")
+
+
+# The DM-1975/Salva-Casa pack, expressed as a spec (the exact artifact the pinned emitter
+# produced; messages mirror orchestrator._THRESHOLD_SLOTS — the loader regenerates them
+# from the live value at load time anyway, ADR-008).
+DM1975_SPEC = RulePackSpec(
+    pack_id="DM1975_SalvaCasa",
+    provisions={
+        "DM_1975_Abitabilita":
+            "D.M. 5 luglio 1975 (altezze minime e requisiti igienico-sanitari)",
+        "DPR380_art24_SalvaCasa":
+            "DPR 380/2001 art. 24 commi 5-bis/5-ter (Salva Casa)",
+    },
+    classes={
+        "AccessorySpace": "Accessory room — gate-verified DM 1975 art.1 enumeration: "
+                          "{enumeration}. Lower height bar; the aero rule does NOT apply.",
+        "HabitableBaselineSpace": "Habitable (or unknown = strict complement) under the "
+                                  "ordinary DM 1975 regime.",
+        "HabitableSalvaCasaSpace": "Habitable (or unknown) under the Salva Casa derogation "
+                                   "(DPR 380/2001 art.24 c.5-bis; c.5-ter conditions "
+                                   "operator-asserted).",
+    },
+    property_shapes=(
+        PropertyShapeSpec("MinHeightHabitable_PS", "acc:heightM", "min_height_habitable_m",
+                          "height below the {v} m habitable minimum (DM 1975 art.1)",
+                          "DM_1975_Abitabilita", ANCHORS["min_height_habitable_m"]),
+        PropertyShapeSpec("MinHeightAccessory_PS", "acc:heightM", "min_height_accessory_m",
+                          "height below the {v} m accessory minimum (DM 1975 art.1)",
+                          "DM_1975_Abitabilita", ANCHORS["min_height_accessory_m"]),
+        PropertyShapeSpec("MinHeightSalvaCasa_PS", "acc:heightM", "min_height_salva_casa_m",
+                          "height below the {v} m Salva-Casa derogated minimum "
+                          "(DPR 380/2001 art.24 c.5-bis)",
+                          "DPR380_art24_SalvaCasa", ANCHORS["min_height_salva_casa_m"]),
+        PropertyShapeSpec("MinAeroRatio_PS", "acc:aeroRatio", "aero_illuminating_ratio",
+                          "aero-illuminating ratio below the {v} (1/8) floor-area minimum "
+                          "(DM 1975 art.5)",
+                          "DM_1975_Abitabilita", ANCHORS["aero_illuminating_ratio"],
+                          anchor_is_fraction=True),
+    ),
+    node_shapes=(
+        NodeShapeSpec("AccessoryShape", "AccessorySpace", ("MinHeightAccessory_PS",)),
+        NodeShapeSpec("HabitableBaselineShape", "HabitableBaselineSpace",
+                      ("MinHeightHabitable_PS", "MinAeroRatio_PS")),
+        NodeShapeSpec("HabitableSalvaCasaShape", "HabitableSalvaCasaSpace",
+                      ("MinHeightSalvaCasa_PS", "MinAeroRatio_PS")),
+    ),
+    vocabulary="art1_accessory",
+)
+
+
+def emit_shacl(verified: dict, vocab: "Optional[dict]", corpus_text: str,
+               spec: "Optional[RulePackSpec]" = None) -> str:
+    """Serialize gate-verified thresholds (+ vocabulary, if the pack declares one) into
+    loadable SHACL Turtle, for ANY declaratively-specified rule pack (Track B Stage 4).
+
+    `verified`: {spec key: value} — every spec-declared key mandatory, finite and > 0.
+    `vocab`:    required iff spec.vocabulary == 'art1_accessory': {'enumeration': [5 terms],
+                'anchored': {token: term}} — the gate-pinned 5-set, every token re-passed
+                through the vocabulary gate. Must be None for packs without a vocabulary.
+    `corpus_text`: the corpus the values were verified against; every bar is RE-DERIVED
+                from the pack's own anchors in it (unique-or-refuse), emitted in the
+                STATUTE's lexical form, and its sha256 is embedded as provenance.
+    `spec`:     the RulePackSpec (default: DM1975_SPEC — byte-compatible with the
+                pre-Stage-4 pinned emitter)."""
     import math
-    missing = [k for k in _EMIT_KEYS if k not in verified]
-    if missing:
-        raise EmitRefusedError(f"emission refused: unverified/missing keys {missing} "
-                               f"(all four numeric thresholds must pass the gate)")
+    spec = spec or DM1975_SPEC
+    _validate_spec(spec, verified)
+    _pin_production_paths(spec)                     # canonical *_PS paths (anti-repoint)
+    extra = [k for k in verified if k not in {p.key for p in spec.property_shapes}]
+    if extra:
+        raise EmitRefusedError(f"emission refused: verified keys {extra} not declared by "
+                               f"spec {spec.pack_id!r} — refusing to silently drop them")
     for k, v in verified.items():
         if not isinstance(v, (int, float)) or isinstance(v, bool) \
                 or not math.isfinite(v) or v <= 0:
             raise EmitRefusedError(f"emission refused: {k} carries a non-finite/non-positive "
                                    f"value {v!r}")
-    # NUMERIC RE-VALIDATION against the corpus (red-team fix: emission previously took
-    # `verified` on faith while re-checking only the vocabulary — the asymmetry let
-    # statute-contradicting bars and mutated corpora emit with a FALSE provenance hash).
-    # Each bar is re-derived from the corpus's own anchor (unique-or-refuse) and the
-    # EMITTED lexical form is the STATUTE's ('2,70' -> Decimal('2.70')), so caller-side
-    # float drift (2.6999999999999997) normalizes to the statutory precision instead of
-    # leaking into a legal bar or an operator-facing message.
+    # NUMERIC RE-VALIDATION against the corpus (red-team fix, ADR-014): every bar is
+    # re-derived from the pack's own anchor (unique-or-refuse); the EMITTED lexical form
+    # is the statute's ('2,70' -> Decimal('2.70')), so caller-side float drift normalizes
+    # to statutory precision instead of leaking into a legal bar or message.
     dec = {}
-    for k in _EMIT_KEYS:
-        bar = _corpus_bar_decimal(corpus_text, k)
+    for p in spec.property_shapes:
+        bar = _corpus_bar_decimal(corpus_text, p.anchor_pattern, p.anchor_is_fraction)
         if bar is None:
-            raise EmitRefusedError(f"emission refused: the corpus anchor for {k} is absent "
-                                   f"or ambiguous — a deleted/decoy-shadowed corpus can "
-                                   f"never become a rule pack")
-        if abs(float(bar) - float(verified[k])) > _EQ_TOL:
-            raise EmitRefusedError(f"emission refused: verified[{k}]={verified[k]!r} "
+            raise EmitRefusedError(f"emission refused: the corpus anchor for {p.key} is "
+                                   f"absent or ambiguous — a deleted/decoy-shadowed corpus "
+                                   f"can never become a rule pack")
+        if abs(float(bar) - float(verified[p.key])) > _EQ_TOL:
+            raise EmitRefusedError(f"emission refused: verified[{p.key}]={verified[p.key]!r} "
                                    f"contradicts the corpus anchor value {bar} — refusing "
                                    f"to attest unverifiable numbers")
-        dec[k] = bar                                   # the STATUTE's lexical form is emitted
-    enum = sorted(vocab.get("enumeration") or [])
-    if frozenset(enum) != _ART1_ENUMERATION:
-        raise EmitRefusedError(f"emission refused: vocabulary enumeration {enum} is not the "
-                               f"gate-pinned Art.1 5-set {sorted(_ART1_ENUMERATION)}")
-    for token in (vocab.get("anchored") or {}):
-        v = validate_vocab_claim(
-            VocabClaim(token=token, ontology_class="accessory",
-                       span="riducibile a **m 2,40** per i corridoi, i disimpegni in genere, "
-                            "i bagni, i gabinetti ed i ripostigli"), corpus_text)
-        if not v.accepted:
-            raise EmitRefusedError(f"emission refused: vocabulary token {token!r} failed the "
-                                   f"selection gate ({v.reason}: {v.detail})")
+        dec[p.key] = bar                               # the STATUTE's lexical form is emitted
 
-    # Lazy import of the RULES-side templates (single source for messages; the validation
-    # gate path above never imports production code — emission is compile-path).
-    sys.path.insert(0, str(_SANDBOX))
-    import orchestrator as _orch
-    msg = {ps: tmpl.format(v=dec[attr])
-           for ps, attr, tmpl in _orch._THRESHOLD_SLOTS}
-    slot_attr = {ps: attr for ps, attr, _t in _orch._THRESHOLD_SLOTS}
-    enum_it = ", ".join(enum)
+    # VOCABULARY (pack-declared): the Art.1 selection gate, exactly as before.
+    enum_it = None
+    if spec.vocabulary == "art1_accessory":
+        enum = sorted((vocab or {}).get("enumeration") or [])
+        if frozenset(enum) != _ART1_ENUMERATION:
+            raise EmitRefusedError(f"emission refused: vocabulary enumeration {enum} is not "
+                                   f"the gate-pinned Art.1 5-set {sorted(_ART1_ENUMERATION)}")
+        for token in (vocab or {}).get("anchored") or {}:
+            v = validate_vocab_claim(
+                VocabClaim(token=token, ontology_class="accessory",
+                           span="riducibile a **m 2,40** per i corridoi, i disimpegni in "
+                                "genere, i bagni, i gabinetti ed i ripostigli"), corpus_text)
+            if not v.accepted:
+                raise EmitRefusedError(f"emission refused: vocabulary token {token!r} failed "
+                                       f"the selection gate ({v.reason}: {v.detail})")
+        enum_it = ", ".join(enum)
+    elif vocab is not None:
+        raise EmitRefusedError(f"emission refused: spec {spec.pack_id!r} declares no "
+                               f"vocabulary but a vocab payload was supplied — explicit "
+                               f"over silent")
 
+    gate_note = (f"{len(spec.property_shapes)} numeric keys"
+                 + (f" + {len(_ART1_ENUMERATION)}-term Art.1 enumeration" if enum_it else "")
+                 + ", all verified")
     lines = [
-        "# AUTO-EMITTED by sandbox/gate_spike.py emit_shacl() — span-quote-gate-verified "
-        "parameters.",
-        f"# emission provenance: corpus sha256 {corpus_sha256(corpus_text)}; "
-        f"gate: 4 numeric keys + {len(enum)}-term Art.1 enumeration, all verified.",
-        "# Structure mirrors sandbox/ontology/dm1975_salvacasa.ttl (ADR-008/008a contracts).",
+        f"# AUTO-EMITTED by sandbox/gate_spike.py emit_shacl() — pack {spec.pack_id} "
+        f"(span-quote-gate-verified parameters).",
+        f"# emission provenance: corpus sha256 {corpus_sha256(corpus_text)}; gate: {gate_note}.",
+        "# Structure per sandbox/ontology/dm1975_salvacasa.ttl (ADR-008/008a contracts).",
         "",
         "@prefix sh:    <http://www.w3.org/ns/shacl#> .",
         "@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .",
@@ -799,125 +998,144 @@ def emit_shacl(verified: dict, vocab: dict, corpus_text: str) -> str:
         "acc:EvaluatedSpace a rdfs:Class ;",
         '    rdfs:comment "An IfcSpace materialized for legal evaluation." .',
         "",
-        "acc:AccessorySpace a rdfs:Class ;",
-        "    rdfs:subClassOf acc:EvaluatedSpace ;",
-        f'    rdfs:comment "Accessory room — gate-verified DM 1975 art.1 enumeration: '
-        f'{enum_it}. Lower height bar; the aero rule does NOT apply." .',
-        "",
-        "acc:HabitableBaselineSpace a rdfs:Class ;",
-        "    rdfs:subClassOf acc:EvaluatedSpace ;",
-        '    rdfs:comment "Habitable (or unknown = strict complement) under the ordinary '
-        'DM 1975 regime." .',
-        "",
-        "acc:HabitableSalvaCasaSpace a rdfs:Class ;",
-        "    rdfs:subClassOf acc:EvaluatedSpace ;",
-        '    rdfs:comment "Habitable (or unknown) under the Salva Casa derogation '
-        '(DPR 380/2001 art.24 c.5-bis; c.5-ter conditions operator-asserted)." .',
-        "",
-        "legal:NormativeProvision a rdfs:Class .",
-        "legal:DM_1975_Abitabilita a legal:NormativeProvision ;",
-        '    rdfs:label "D.M. 5 luglio 1975 (altezze minime e requisiti igienico-sanitari)" .',
-        "legal:DPR380_art24_SalvaCasa a legal:NormativeProvision ;",
-        '    rdfs:label "DPR 380/2001 art. 24 commi 5-bis/5-ter (Salva Casa)" .',
-        "",
     ]
-    for ps in ("MinHeightHabitable_PS", "MinHeightAccessory_PS",
-               "MinHeightSalvaCasa_PS", "MinAeroRatio_PS"):
+    for cls_name, comment in spec.classes.items():
+        if "{enumeration}" in comment:
+            if enum_it is None:
+                raise EmitRefusedError(f"emission refused: class {cls_name!r} comment wants "
+                                       f"{{enumeration}} but the pack declares no vocabulary")
+            comment = comment.replace("{enumeration}", enum_it)
+        if not _safe_literal(comment):             # post-substitution re-check (injection)
+            raise EmitRefusedError(f"emission refused: class {cls_name!r} comment unsafe after "
+                                   f"substitution")
         lines += [
-            f"legal:{ps} a sh:PropertyShape ;",
-            f"    sh:path {_EMIT_PATHS[ps]} ;",
-            "    sh:minCount 1 ;",
-            "    sh:maxCount 1 ;",
-            f"    sh:minInclusive {format(dec[slot_attr[ps]], 'f')} ;",
-            f'    sh:message "{msg[ps]}" ;',
-            f"    rdfs:seeAlso {_EMIT_SEEALSO[ps]} .",
+            f"acc:{cls_name} a rdfs:Class ;",
+            "    rdfs:subClassOf acc:EvaluatedSpace ;",
+            f'    rdfs:comment "{comment}" .',
             "",
         ]
-    lines += [
-        "legal:AccessoryShape a sh:NodeShape ;",
-        "    sh:targetClass acc:AccessorySpace ;",
-        "    sh:property legal:MinHeightAccessory_PS .",
-        "",
-        "legal:HabitableBaselineShape a sh:NodeShape ;",
-        "    sh:targetClass acc:HabitableBaselineSpace ;",
-        "    sh:property legal:MinHeightHabitable_PS ;",
-        "    sh:property legal:MinAeroRatio_PS .",
-        "",
-        "legal:HabitableSalvaCasaShape a sh:NodeShape ;",
-        "    sh:targetClass acc:HabitableSalvaCasaSpace ;",
-        "    sh:property legal:MinHeightSalvaCasa_PS ;",
-        "    sh:property legal:MinAeroRatio_PS .",
-        "",
-    ]
+    lines.append("legal:NormativeProvision a rdfs:Class .")
+    for prov, label in spec.provisions.items():
+        lines += [
+            f"legal:{prov} a legal:NormativeProvision ;",
+            f'    rdfs:label "{label}" .',
+        ]
+    lines.append("")
+    for p in spec.property_shapes:
+        # LITERAL substitution of the sole {v} field (never str.format — no field/attr
+        # access), then re-check the result is Turtle-safe (ADR-016 injection fix).
+        msg = p.message_template.replace("{v}", format(dec[p.key], "f"))
+        if not _safe_literal(msg):
+            raise EmitRefusedError(f"emission refused: {p.ps_name} message unsafe after "
+                                   f"substitution ({msg!r})")
+        lines += [
+            f"legal:{p.ps_name} a sh:PropertyShape ;",
+            f"    sh:path {p.path} ;",
+            "    sh:minCount 1 ;",
+            "    sh:maxCount 1 ;",
+            f"    sh:minInclusive {format(dec[p.key], 'f')} ;",
+            f'    sh:message "{msg}" ;',
+            f"    rdfs:seeAlso legal:{p.see_also} .",
+            "",
+        ]
+    for n in spec.node_shapes:
+        lines += [f"legal:{n.shape_name} a sh:NodeShape ;",
+                  f"    sh:targetClass acc:{n.target_class} ;"]
+        for i, ps in enumerate(n.property_shapes):
+            sep = " ." if i == len(n.property_shapes) - 1 else " ;"
+            lines.append(f"    sh:property legal:{ps}{sep}")
+        lines.append("")
     return "\n".join(lines)
 
 
-_EMIT_WIRING = {
-    "AccessoryShape": ("AccessorySpace", frozenset({"MinHeightAccessory_PS"})),
-    "HabitableBaselineShape": ("HabitableBaselineSpace",
-                               frozenset({"MinHeightHabitable_PS", "MinAeroRatio_PS"})),
-    "HabitableSalvaCasaShape": ("HabitableSalvaCasaSpace",
-                                frozenset({"MinHeightSalvaCasa_PS", "MinAeroRatio_PS"})),
-}
+def verify_emitted_shapes(ttl_text: str, verified: dict,
+                          spec: "Optional[RulePackSpec]" = None) -> bool:
+    """TWO-STAGE tamper verification, SPEC-DRIVEN (Track B Stage 4). Red-teamed origin:
+    the production loader RE-PARAMETERIZES sh:minInclusive from `verified`, so checking
+    only the loaded graph is tautological — a tampered emitted bar would verify green
+    against its own overwrite.
 
-
-def verify_emitted_shapes(ttl_text: str, verified: dict) -> bool:
-    """TWO-STAGE tamper verification (red-teamed: the production loader RE-PARAMETERIZES
-    sh:minInclusive from `verified`, so checking only the loaded graph is tautological —
-    a tampered emitted bar would verify green against its own overwrite).
-
-    Stage 1 — RAW-GRAPH audit of the emitted text itself: per property shape, the raw
-    sh:minInclusive literal must numerically equal the gate-verified value (tolerance
-    1e-9 — emission normalizes to the statute's lexical form), sh:path must be the pinned
-    path, sh:minCount >= 1 and sh:maxCount == 1 must be present; per node shape, the
-    sh:targetClass and the EXACT sh:property wiring must match (AccessoryShape must NOT
-    carry the aero shape; both habitable shapes must).
-    Stage 2 — the production loader's own ADR-008a guard set on top.
+    Stage 1 — RAW-GRAPH audit of the emitted text against the SPEC: per property shape,
+    the raw sh:minInclusive literal must numerically equal the gate-verified value
+    (tolerance 1e-9 — emission normalizes to the statute's lexical form), sh:path must be
+    the spec's path, sh:minCount >= 1 and sh:maxCount == 1 present; per node shape, the
+    sh:targetClass and the EXACT sh:property wiring must match the spec; every spec class
+    must be targeted (anti-vacuous-conformance, generalized).
+    Stage 2 — for a PRODUCTION-SLOT-COMPATIBLE pack (exactly the four standard *_PS names,
+    keys, and three target classes), the production loader's own ADR-008a guard set runs
+    on top; a structurally different pack has no production runtime yet, so stage 2 is
+    the generic guard set of stage 1 alone (stated, not silent).
     Raises EmitRefusedError / ValueError on any miss."""
     import tempfile
     from decimal import Decimal as _D
     from types import SimpleNamespace
-    from rdflib import Graph, Namespace
+    from rdflib import Graph, Namespace, RDF
     sys.path.insert(0, str(_SANDBOX))
     import orchestrator as _orch
+    spec = spec or DM1975_SPEC
     SH, LEGAL = _orch.SH, _orch.LEGAL
     ACC = Namespace("https://acc.local/ontology#")
-    path_uri = {"acc:heightM": ACC["heightM"], "acc:aeroRatio": ACC["aeroRatio"]}
 
     g = Graph()
     g.parse(data=ttl_text, format="turtle")            # parse error -> fail-closed
-    slot_attr = {ps: attr for ps, attr, _t in _orch._THRESHOLD_SLOTS}
-    for ps_name, attr in slot_attr.items():
-        ps = LEGAL[ps_name]
+    for p_spec in spec.property_shapes:
+        ps = LEGAL[p_spec.ps_name]
         raw = g.value(ps, SH.minInclusive)
         if raw is None:
-            raise EmitRefusedError(f"emitted TTL: {ps_name} has no raw sh:minInclusive")
-        if abs(_D(str(raw)) - _D(str(float(verified[attr])))) > _D("1e-9"):
-            raise EmitRefusedError(f"emitted bar TAMPER for {ps_name}: raw literal {raw} "
-                                   f"!= gate-verified {verified[attr]!r}")
+            raise EmitRefusedError(f"emitted TTL: {p_spec.ps_name} has no raw sh:minInclusive")
+        if abs(_D(str(raw)) - _D(str(float(verified[p_spec.key])))) > _D("1e-9"):
+            raise EmitRefusedError(f"emitted bar TAMPER for {p_spec.ps_name}: raw literal "
+                                   f"{raw} != gate-verified {verified[p_spec.key]!r}")
         mc = g.value(ps, SH.minCount)
         if mc is None or int(mc) < 1:
-            raise EmitRefusedError(f"emitted TTL: {ps_name} missing sh:minCount >= 1")
+            raise EmitRefusedError(f"emitted TTL: {p_spec.ps_name} missing sh:minCount >= 1")
         xc = g.value(ps, SH.maxCount)
         if xc is None or int(xc) != 1:
-            raise EmitRefusedError(f"emitted TTL: {ps_name} missing sh:maxCount 1")
-        if g.value(ps, SH.path) != path_uri[_EMIT_PATHS[ps_name]]:
-            raise EmitRefusedError(f"emitted TTL: {ps_name} sh:path TAMPER "
+            raise EmitRefusedError(f"emitted TTL: {p_spec.ps_name} missing sh:maxCount 1")
+        if g.value(ps, SH.path) != ACC[p_spec.path.split(":", 1)[1]]:
+            raise EmitRefusedError(f"emitted TTL: {p_spec.ps_name} sh:path TAMPER "
                                    f"({g.value(ps, SH.path)})")
-    for shape, (target, props) in _EMIT_WIRING.items():
-        node = LEGAL[shape]
-        if g.value(node, SH.targetClass) != ACC[target]:
-            raise EmitRefusedError(f"emitted TTL: {shape} targetClass mismatch")
+    targeted = set()
+    for n_spec in spec.node_shapes:
+        node = LEGAL[n_spec.shape_name]
+        if g.value(node, SH.targetClass) != ACC[n_spec.target_class]:
+            raise EmitRefusedError(f"emitted TTL: {n_spec.shape_name} targetClass mismatch")
+        targeted.add(n_spec.target_class)
         got = {p for p in g.objects(node, SH.property)}
-        if got != {LEGAL[p] for p in props}:
-            raise EmitRefusedError(f"emitted TTL: {shape} property WIRING mismatch "
-                                   f"(fail-open/fail-spurious risk): {sorted(str(x) for x in got)}")
+        if got != {LEGAL[p] for p in n_spec.property_shapes}:
+            raise EmitRefusedError(f"emitted TTL: {n_spec.shape_name} property WIRING "
+                                   f"mismatch (fail-open/fail-spurious risk): "
+                                   f"{sorted(str(x) for x in got)}")
+    if targeted != set(spec.classes):
+        raise EmitRefusedError(f"emitted TTL: untargeted classes "
+                               f"{sorted(set(spec.classes) - targeted)} — vacuous conformance")
 
-    thr = SimpleNamespace(**{k: verified[k] for k in _EMIT_KEYS})
-    with tempfile.TemporaryDirectory() as d:
-        p = Path(d) / "emitted.ttl"
-        p.write_text(ttl_text, encoding="utf-8")
-        _orch.load_shacl_shapes(thr, path=str(p))       # ADR-008a guards on top
+    # CLOSURE check (ADR-016 red-team): the emitted graph must carry EXACTLY the spec's
+    # shapes and targeted classes — no injected extra NodeShape/PropertyShape (an appended
+    # shape targeting acc:EvaluatedSpace would otherwise ride into the production loader
+    # and impose a bar on every space) and no extra target class.
+    all_ns = set(g.subjects(RDF.type, SH.NodeShape))
+    all_ps = set(g.subjects(RDF.type, SH.PropertyShape))
+    exp_ns = {LEGAL[n.shape_name] for n in spec.node_shapes}
+    exp_ps = {LEGAL[p.ps_name] for p in spec.property_shapes}
+    if all_ns != exp_ns:
+        raise EmitRefusedError(f"emitted TTL: unexpected NodeShape subjects "
+                               f"{sorted(str(x) for x in all_ns - exp_ns)} (injection)")
+    if all_ps != exp_ps:
+        raise EmitRefusedError(f"emitted TTL: unexpected PropertyShape subjects "
+                               f"{sorted(str(x) for x in all_ps - exp_ps)} (injection)")
+    all_targets = set(g.objects(None, SH.targetClass))
+    exp_targets = {ACC[c] for c in spec.classes}
+    if all_targets != exp_targets:
+        raise EmitRefusedError(f"emitted TTL: unexpected sh:targetClass "
+                               f"{sorted(str(x) for x in all_targets - exp_targets)}")
+
+    if _is_production_compatible(spec):
+        thr = SimpleNamespace(**{p.key: verified[p.key] for p in spec.property_shapes})
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "emitted.ttl"
+            p.write_text(ttl_text, encoding="utf-8")
+            _orch.load_shacl_shapes(thr, path=str(p))   # ADR-008a guards on top
     return True
 
 
@@ -1142,6 +1360,8 @@ def _anchor_parity_row() -> dict:
             drift.append("_SELECTION_STOPWORDS")
         if _ART1_ENUMERATION != _p._ART1_ENUMERATION:
             drift.append("_ART1_ENUMERATION")
+        if _TERM_INFLECTIONS != _p._TERM_INFLECTIONS:      # ADR-016: hardening now coordinated
+            drift.append("_TERM_INFLECTIONS")
         stem_probe = ("corridoi", "corrid", "disimpegno", "disimpegni", "bagno", "bagni",
                       "gabinetti", "ripostiglio", "ripostigli", "i", "bag", "bagno_decoy")
         if any(_it_stem(t) != _p._it_stem(t) for t in stem_probe):
@@ -1197,6 +1417,54 @@ def vocab_battery() -> List[Tuple[str, str, VocabClaim, str]]:
         # ...while the genuine singular/plural/hint inflections still bind.
         ("V0_baseline", "vok_inflection_gabinetto", _vc("gabinetto", "accessory", S), "ACCEPT"),
     ]
+
+
+# --- Track B Stage 4 verification fixture: a MOCK regional pack (test-only, not law) ----
+_LOMBARDY_MOCK_CORPUS = (
+    "## Legge Regionale Lombardia (MOCK — test fixture, not law)\n\n"
+    "L'altezza minima interna utile dei locali di abitazione è stabilita in m 3,00, "
+    "ridotta a m 2,55 per i locali accessori. Per gli edifici esistenti oggetto di "
+    "recupero la misura minima è pari a m 2,55. La superficie finestrata apribile non "
+    "potrà essere inferiore a 1/10 della superficie del pavimento.\n"
+)
+_LOMBARDY_MOCK_VERIFIED = {"min_height_habitable_m": 3.00, "min_height_accessory_m": 2.55,
+                           "min_height_salva_casa_m": 2.55, "aero_illuminating_ratio": 0.1}
+LOMBARDY_MOCK_SPEC = RulePackSpec(
+    pack_id="LR_Lombardia_Mock",
+    provisions={"LR_Lombardia_Mock_Prov":
+                "Legge Regionale Lombardia (MOCK - test fixture, not law)"},
+    classes={
+        "AccessorySpace": "Accessory room under the mock regional regime (lower bar; "
+                          "no aero rule).",
+        "HabitableBaselineSpace": "Habitable room under the mock regional baseline.",
+        "HabitableSalvaCasaSpace": "Habitable room under the mock existing-building "
+                                   "derogation.",
+    },
+    property_shapes=(
+        PropertyShapeSpec("MinHeightHabitable_PS", "acc:heightM", "min_height_habitable_m",
+                          "height below the {v} m mock-regional habitable minimum",
+                          "LR_Lombardia_Mock_Prov", r"stabilita in m\s*(\d+[.,]\d+)"),
+        PropertyShapeSpec("MinHeightAccessory_PS", "acc:heightM", "min_height_accessory_m",
+                          "height below the {v} m mock-regional accessory minimum",
+                          "LR_Lombardia_Mock_Prov", r"ridotta a m\s*(\d+[.,]\d+)"),
+        PropertyShapeSpec("MinHeightSalvaCasa_PS", "acc:heightM", "min_height_salva_casa_m",
+                          "height below the {v} m mock existing-building minimum",
+                          "LR_Lombardia_Mock_Prov", r"misura minima è pari a m\s*(\d+[.,]\d+)"),
+        PropertyShapeSpec("MinAeroRatio_PS", "acc:aeroRatio", "aero_illuminating_ratio",
+                          "aero-illuminating ratio below the {v} (1/10) mock floor-area minimum",
+                          "LR_Lombardia_Mock_Prov",
+                          r"(\d{1,2})\s*/\s*(\d{1,3})\s*della superficie del pavimento",
+                          anchor_is_fraction=True),
+    ),
+    node_shapes=(
+        NodeShapeSpec("AccessoryShape", "AccessorySpace", ("MinHeightAccessory_PS",)),
+        NodeShapeSpec("HabitableBaselineShape", "HabitableBaselineSpace",
+                      ("MinHeightHabitable_PS", "MinAeroRatio_PS")),
+        NodeShapeSpec("HabitableSalvaCasaShape", "HabitableSalvaCasaSpace",
+                      ("MinHeightSalvaCasa_PS", "MinAeroRatio_PS")),
+    ),
+    vocabulary=None,
+)
 
 
 def _trust_and_emit_rows(raw: str) -> List[dict]:
@@ -1316,6 +1584,120 @@ def _trust_and_emit_rows(raw: str) -> List[dict]:
             row(case_id, False, "EMITTED_FROM_REJECTED_CORPUS")
         except EmitRefusedError as exc:
             row(case_id, True, "EmitRefusedError", str(exc)[:80])
+
+    # --- Track B Stage 4: the GENERALIZED emitter on a mock regional pack ---------------
+    try:
+        lttl = emit_shacl(_LOMBARDY_MOCK_VERIFIED, None, _LOMBARDY_MOCK_CORPUS,
+                          spec=LOMBARDY_MOCK_SPEC)
+        verify_emitted_shapes(lttl, _LOMBARDY_MOCK_VERIFIED, spec=LOMBARDY_MOCK_SPEC)
+        ok = ("sh:minInclusive 3.00 ;" in lttl and "sh:minInclusive 0.1 ;" in lttl
+              and "LR_Lombardia_Mock" in lttl)
+        row("gen_lombardy_emits_and_loads", ok,
+            "mock regional pack emitted; raw audit + PRODUCTION load_shacl_shapes green "
+            "(production-slot-compatible: same 4 *_PS URIs / keys / 3 classes, mock bars)")
+    except Exception as exc:  # noqa: BLE001
+        row("gen_lombardy_emits_and_loads", False, "UNEXPECTED", str(exc)[:100])
+    try:
+        tampered = lttl.replace("sh:minInclusive 3.00 ;", "sh:minInclusive 2.00 ;", 1)
+        try:
+            verify_emitted_shapes(tampered, _LOMBARDY_MOCK_VERIFIED, spec=LOMBARDY_MOCK_SPEC)
+            row("gen_lombardy_bar_tamper_refused", False, "TAMPER_VERIFIED_GREEN")
+        except (ValueError, EmitRefusedError):
+            row("gen_lombardy_bar_tamper_refused", True,
+                "raw-graph audit refused (anti-tautology stage generalized)")
+    except Exception as exc:  # noqa: BLE001
+        row("gen_lombardy_bar_tamper_refused", False, "UNEXPECTED", str(exc)[:80])
+    try:
+        emit_shacl(_LOMBARDY_MOCK_VERIFIED, None,
+                   _LOMBARDY_MOCK_CORPUS.replace("ridotta a m 2,55", "ridotta a m ___", 1),
+                   spec=LOMBARDY_MOCK_SPEC)
+        row("gen_lombardy_missing_anchor_refused", False, "EMITTED_WITHOUT_ANCHOR")
+    except EmitRefusedError:
+        row("gen_lombardy_missing_anchor_refused", True, "EmitRefusedError")
+    # Spec injection: caller-supplied strings can no longer be hardcoding-safe — the
+    # validators must refuse Turtle-breaking literals and unsafe URI local names.
+    import dataclasses as _dc
+    try:
+        bad = _dc.replace(LOMBARDY_MOCK_SPEC,
+                          provisions={"LR_Lombardia_Mock_Prov":
+                                      'evil" . legal:Backdoor a sh:NodeShape ; rdfs:label "x'})
+        emit_shacl(_LOMBARDY_MOCK_VERIFIED, None, _LOMBARDY_MOCK_CORPUS, spec=bad)
+        row("gen_spec_literal_injection_refused", False, "INJECTION_EMITTED")
+    except EmitRefusedError:
+        row("gen_spec_literal_injection_refused", True, "EmitRefusedError (unsafe literal)")
+    try:
+        bad = _dc.replace(LOMBARDY_MOCK_SPEC, pack_id="Evil Pack; drop")
+        emit_shacl(_LOMBARDY_MOCK_VERIFIED, None, _LOMBARDY_MOCK_CORPUS, spec=bad)
+        row("gen_spec_uri_injection_refused", False, "INJECTION_EMITTED")
+    except EmitRefusedError:
+        row("gen_spec_uri_injection_refused", True, "EmitRefusedError (unsafe URI name)")
+    try:
+        emit_shacl(_LOMBARDY_MOCK_VERIFIED, vocab, _LOMBARDY_MOCK_CORPUS,
+                   spec=LOMBARDY_MOCK_SPEC)
+        row("gen_vocab_on_novocab_spec_refused", False, "EMITTED_UNDECLARED_VOCAB")
+    except EmitRefusedError:
+        row("gen_vocab_on_novocab_spec_refused", True, "EmitRefusedError (explicit over silent)")
+
+    # --- ADR-016 red-team round 5 pins (all reproduced, all now refused) ----------------
+    # message_template format-field injection: only {v} is admissible; a format field with
+    # attribute access re-introducing a quote/newline must be refused at spec validation.
+    for case_id, tmpl in (
+            ("gen_msg_format_attr_injection_refused", "min {v} m {v.__class__.__doc__}"),
+            ("gen_msg_format_dict_injection_refused", "min {v} m {v.__class__.__dict__}"),
+            ("gen_msg_bare_field_refused", "min {v} and {0}")):
+        try:
+            bad = _dc.replace(LOMBARDY_MOCK_SPEC, property_shapes=tuple(
+                _dc.replace(p, message_template=tmpl) if i == 0 else p
+                for i, p in enumerate(LOMBARDY_MOCK_SPEC.property_shapes)))
+            emit_shacl(_LOMBARDY_MOCK_VERIFIED, None, _LOMBARDY_MOCK_CORPUS, spec=bad)
+            row(case_id, False, "INJECTION_EMITTED")
+        except EmitRefusedError:
+            row(case_id, True, "EmitRefusedError")
+    # Injected extra NodeShape appended to a verified emission: the closure check must
+    # refuse it (it would otherwise ride the production loader onto acc:EvaluatedSpace).
+    try:
+        good = emit_shacl(verified, vocab, raw)
+        injected = good + ("\nlegal:BackdoorShape a sh:NodeShape ;\n"
+                           "    sh:targetClass acc:EvaluatedSpace ;\n"
+                           "    sh:property legal:MinHeightHabitable_PS .\n")
+        try:
+            verify_emitted_shapes(injected, verified)
+            row("gen_injected_extra_shape_refused", False, "INJECTED_SHAPE_VERIFIED_GREEN")
+        except (ValueError, EmitRefusedError):
+            row("gen_injected_extra_shape_refused", True, "closure check refused injection")
+    except Exception as exc:  # noqa: BLE001
+        row("gen_injected_extra_shape_refused", False, "UNEXPECTED", str(exc)[:80])
+    # Production-slot pack re-pointing MinAeroRatio_PS to acc:heightM must refuse at emit.
+    try:
+        repoint = _dc.replace(DM1975_SPEC, property_shapes=tuple(
+            _dc.replace(p, path="acc:heightM") if p.ps_name == "MinAeroRatio_PS" else p
+            for p in DM1975_SPEC.property_shapes))
+        emit_shacl(verified, vocab, raw, spec=repoint)
+        row("gen_production_path_repoint_refused", False, "REPOINT_EMITTED")
+    except EmitRefusedError:
+        row("gen_production_path_repoint_refused", True, "EmitRefusedError (canonical path pin)")
+    # Malformed anchor group counts fail closed via EmitRefusedError, not a raw crash or a
+    # silently-miscomputed bar.
+    for case_id, patt, isfrac in (
+            ("gen_anchor_1group_fraction_refused", r"stabilita in m\s*(\d+)", True),
+            ("gen_anchor_2group_scalar_refused", r"stabilita in m\s*(\d+)[.,](\d+)", False)):
+        try:
+            bad = _dc.replace(LOMBARDY_MOCK_SPEC, property_shapes=tuple(
+                _dc.replace(p, anchor_pattern=patt, anchor_is_fraction=isfrac)
+                if p.ps_name == "MinHeightHabitable_PS" else p
+                for p in LOMBARDY_MOCK_SPEC.property_shapes))
+            emit_shacl(_LOMBARDY_MOCK_VERIFIED, None, _LOMBARDY_MOCK_CORPUS, spec=bad)
+            row(case_id, False, "MALFORMED_ANCHOR_EMITTED")
+        except EmitRefusedError:
+            row(case_id, True, "EmitRefusedError")
+    # Duplicate NodeShape names refused at spec validation.
+    try:
+        dup = _dc.replace(LOMBARDY_MOCK_SPEC, node_shapes=LOMBARDY_MOCK_SPEC.node_shapes
+                          + (LOMBARDY_MOCK_SPEC.node_shapes[0],))
+        emit_shacl(_LOMBARDY_MOCK_VERIFIED, None, _LOMBARDY_MOCK_CORPUS, spec=dup)
+        row("gen_duplicate_nodeshape_refused", False, "DUP_NODESHAPE_EMITTED")
+    except EmitRefusedError:
+        row("gen_duplicate_nodeshape_refused", True, "EmitRefusedError")
     return rows
 
 

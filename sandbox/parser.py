@@ -418,6 +418,22 @@ _ACCESSORY_SELECTION_ANCHOR = r"riducibile\s+a\s+m\s*\d+[.,]\d+\s+per\s+(.+?)[.�
 _IT_SELECTION_STOPWORDS = frozenset({"i", "in", "genere", "ed"})
 # The pinned 5-term enumeration the statute prose must yield (else it has drifted -> raise).
 _ART1_ENUMERATION = frozenset({"corridoi", "disimpegni", "bagni", "gabinetti", "ripostigli"})
+# CLOSED INFLECTION LEXICON (ADR-016; the ADR-014 spike red-team follow-up landed in
+# production). Bare vowel-run stem-equality admits invented colliders: 'bagnio'/'bagna'/
+# 'bagnu' all stem to 'bagn' == bagni's stem, 'corridoia' to 'corrid', 'gabinetta' to
+# 'gabinett' — 11 such non-words were constructed and CERTIFIED by the pre-ADR-016 gate.
+# After the stem matches, the token must ALSO be one of the term's closed admissible
+# inflections: the statutory plural, the regular singular, and the applicability-table's
+# canonical truncated hint. _it_stem itself is unchanged (the spike's parity pin diffs it
+# byte-identical); this is an ADDITIONAL layer, mirrored in gate_spike._TERM_INFLECTIONS
+# and drift-pinned by the spike battery's parity row.
+_TERM_INFLECTIONS = {
+    "corridoi":   frozenset({"corridoi", "corridoio", "corrid"}),
+    "disimpegni": frozenset({"disimpegni", "disimpegno", "disimpegn"}),
+    "bagni":      frozenset({"bagni", "bagno", "bagn"}),
+    "gabinetti":  frozenset({"gabinetti", "gabinetto", "gabinett"}),
+    "ripostigli": frozenset({"ripostigli", "ripostiglio", "ripostigl"}),
+}
 
 
 def _it_stem(token: str) -> str:
@@ -468,8 +484,11 @@ def verify_accessory_selection_against_text(art1_tokens, law_text, *, debt_token
 
     Bind every art1-provenance token to the DM-1975 Art.1 prose enumeration by STEM EQUALITY after
     singular/plural normalization (so corrid≡corridoi, disimpegno≡disimpegni, bagno≡bagni,
-    ripostiglio≡ripostigli anchor across the drift). Equality, NOT prefix: a truncated ('bag') or
-    suffix-extended ('bagno_decoy') token does not anchor. Direction is subset — art1 ⊆ enumeration
+    ripostiglio≡ripostigli anchor across the drift). Equality, NOT prefix: a sub-stem truncation
+    ('bag') or suffix-extended ('bagno_decoy') token does not anchor. THEN (ADR-016) the token must
+    also be one of the term's closed admissible inflections (`_TERM_INFLECTIONS`): stem-equality is
+    necessary but NOT sufficient — an invented vowel-run collider ('bagnio'/'corridoia' stem-equals
+    but is never certified). Direction is subset — art1 ⊆ enumeration
     — so 'gabinetti' (carried only via the wc/toilet debt synonyms, no art1 token) is correctly
     left unmatched (honest, not a failure). Cross-lingual debt_tokens are recorded as DECLARED,
     UNANCHORED debt — never statute-checked, never reported anchored (baseline §7).
@@ -497,6 +516,12 @@ def verify_accessory_selection_against_text(art1_tokens, law_text, *, debt_token
                 f"accessory selection: art1 token {token!r} (stem {stem!r}) does not anchor to the "
                 f"DM-1975 Art.1 enumeration {enumeration} — NO-INVENT: refusing to certify an "
                 "unanchored accessory token as statute-verified")
+        if token.strip().lower() not in _TERM_INFLECTIONS.get(term, frozenset()):
+            raise ValidationGateError(
+                f"accessory selection: token {token!r} stem-collides with {term!r} but is not one "
+                f"of its closed admissible inflections {sorted(_TERM_INFLECTIONS.get(term, ()))} — "
+                f"an invented vowel-run collider ('bagnio', 'corridoia') is never certified "
+                f"(ADR-016, fail-closed)")
         anchored[token] = term
     return {"anchored": anchored, "debt": list(debt_tokens), "enumeration": enumeration}
 

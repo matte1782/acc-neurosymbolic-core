@@ -307,6 +307,24 @@ def test_selection_rejects_duplicate_injection():
     _expect_gate_raise(lambda: verify_accessory_selection_against_text(_ART1_GROUP, injected))
 
 
+def test_selection_rejects_stem_colliders():
+    # ADR-016 (ADR-014 spike red-team follow-up): bare vowel-run stem-equality certified
+    # invented colliders ('bagnio' stems to 'bagn' == bagni). The closed inflection lexicon
+    # must refuse every collider while the genuine plural/singular/hint inflections still
+    # anchor (the standing accepts above cover corrid/disimpegno/bagno/ripostiglio).
+    for collider in ("bagnio", "bagnaa", "bagna", "bagne", "bagnu", "corridoia", "corrido",
+                     "disimpegnu", "ripostiglo", "gabinetta", "gabinettu"):
+        _expect_gate_raise(
+            lambda c=collider: verify_accessory_selection_against_text((c,), LAW))
+    # genuine inflections outside the 4 table hints still bind (plural + singular forms).
+    out = verify_accessory_selection_against_text(("gabinetto", "corridoi"), LAW)
+    assert out["anchored"] == {"gabinetto": "gabinetti", "corridoi": "corridoi"}, out["anchored"]
+    # ADR-016 cross-file drift pin (moved into the standard gate so an edit to one table
+    # can't pass CI green): the production lexicon must equal the spike's copy byte-for-byte.
+    import gate_spike as _gs  # noqa: E402 — spike-side import, parser untouched
+    assert P._TERM_INFLECTIONS == _gs._TERM_INFLECTIONS, "inflection lexicon drift"
+
+
 def test_selection_decoys_stay_out():
     # A non-Art.1 surface/room string tagged art1 RAISES via the same non-enumerated-token path as
     # a fabrication. The selection gate touches NO SYSTEM_PROMPT/_SOURCE_ANCHORS/THRESHOLD_KEYS;
