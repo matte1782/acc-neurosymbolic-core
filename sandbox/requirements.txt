@@ -7,3 +7,9 @@ rdflib==7.6.0          # Stage 4b graph: rdflib store + SPARQL 1.1 (BSD-3); Oxig
 pyshacl==0.31.0        # Stage 5 (ADR-008): declarative SHACL validation of the legal comparison layer
                        # (Apache-2.0; deps owlrl/prettytable/packaging all permissive — license vet per
                        # ONTOLOGY_UPGRADE_BLUEPRINT §3/§5)
+
+# --- OPTIONAL: the API seam (ADR-019, sandbox/api.py) — engine/CLI/test core run without these
+fastapi>=0.110           # POST /evaluate HTTP surface (MIT; transitive starlette BSD-3)
+python-multipart>=0.0.9  # multipart IFC upload parsing (Apache-2.0)
+uvicorn>=0.29            # ASGI server for self-hosted deployment (BSD-3)
+httpx>=0.27              # test-only: fastapi TestClient transport (BSD-3)

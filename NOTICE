@@ -45,6 +45,27 @@ user-replaceable package dependencies declared in sandbox/requirements.txt.
    distributed with this product. Model weights (e.g. llama3.1:8b) are
    governed by their own licenses and are not distributed with this product.
 
+7. FastAPI (fastapi) — OPTIONAL, API seam only (sandbox/api.py, ADR-019)
+   License: MIT
+   Homepage: https://github.com/fastapi/fastapi
+   Role: HTTP surface for POST /evaluate. Not required by the engine, CLI,
+   or test core. Transitive: starlette (BSD-3-Clause).
+
+8. python-multipart — OPTIONAL, API seam only
+   License: Apache-2.0
+   Homepage: https://github.com/Kludex/python-multipart
+   Role: multipart/form-data parsing for the IFC upload endpoint.
+
+9. uvicorn — OPTIONAL, API seam serving only
+   License: BSD-3-Clause
+   Homepage: https://github.com/encode/uvicorn
+   Role: ASGI server for local/self-hosted deployment of the API seam.
+
+10. httpx — OPTIONAL, test-only (fastapi TestClient transport)
+    License: BSD-3-Clause
+    Homepage: https://github.com/encode/httpx
+    Role: in-process test client transport for tests/test_api.py.
+
 Specification licenses (implemented, not forked — no specification text is
 redistributed by this product):
 - buildingSMART IDS (Information Delivery Specification) v1.0: CC-BY-ND-4.0.
