@@ -61,6 +61,19 @@ _THRESHOLD_SLOTS = (
 )
 TARGET_CLASSES = ("AccessorySpace", "HabitableBaselineSpace", "HabitableSalvaCasaSpace")
 
+# --- ADR-017: the measurement paths the engine's extractor ADVERTISES (rules-side registry) ----
+# Keys are the canonical acc: measurement paths a rule pack may bind with sh:path; the extractor
+# side is checker.MEASUREMENT_EXTRACTORS (checker imports orchestrator, never the reverse — the
+# two key sets are pinned equal in tests/test_aero_extraction.py). load_shacl_shapes REFUSES a
+# pack binding any other path: the engine could never supply that measurement, so every space
+# would read UNDETERMINED through sh:minCount while the pack looked loaded — and a typo'd path
+# (acc:areoRatio) would silently drop a legal check. Surface both at load time instead.
+SUPPORTED_MEASUREMENT_PATHS = {
+    _accgraph.ACC.heightM: "net room height (m) — Qto multi-key extraction",
+    _accgraph.ACC.aeroRatio: "openable-window area / net floor area — IfcRelSpaceBoundary "
+                             "traversal + conservative min(attr, Qto) / boundary-geometry bound",
+}
+
 
 def load_shacl_shapes(thr, path: Optional[str] = None) -> Graph:
     """Load + validate + parameterize the SHACL shapes graph. FAIL-CLOSED (mirrors
@@ -78,6 +91,21 @@ def load_shacl_shapes(thr, path: Optional[str] = None) -> Graph:
         raise ValueError(f"SHACL shapes {path!r}: missing sh:targetClass for "
                          f"{sorted(str(c) for c in expected - targeted)} — a space materialized "
                          f"under an untargeted class would conform vacuously (fail-closed)")
+    # ADR-017: every sh:path the pack binds must be a measurement the extractor advertises.
+    bound_paths = set(g.objects(None, SH.path))
+    unsupported = bound_paths - set(SUPPORTED_MEASUREMENT_PATHS)
+    if unsupported:
+        raise ValueError(f"SHACL shapes {path!r}: sh:path binds unsupported measurement(s) "
+                         f"{sorted(str(p) for p in unsupported)} — not in the extractor's "
+                         f"measurement registry (SUPPORTED_MEASUREMENT_PATHS); the engine cannot "
+                         f"supply them, refusing (fail-closed, ADR-017)")
+    # SPARQL-based constraints carry no sh:path, so they evade the registry guard above AND the
+    # runtime's path-routed verdict mapping (verdicts_from_report would crash on the unrouted
+    # result) — refuse them classified at load (red-team round 6).
+    if next(g.triples((None, SH.sparql, None)), None) is not None:
+        raise ValueError(f"SHACL shapes {path!r}: sh:sparql constraint present — SPARQL-based "
+                         f"constraints carry no sh:path and cannot be routed to a verdict slot; "
+                         f"refusing (fail-closed, ADR-017)")
     for ps_name, thr_attr, msg_tmpl in _THRESHOLD_SLOTS:
         ps = LEGAL[ps_name]
         if g.value(ps, SH.minInclusive) is None:
@@ -92,9 +120,45 @@ def load_shacl_shapes(thr, path: Optional[str] = None) -> Graph:
                              f"fail-closed UNDETERMINED construct is missing (an absent measurement "
                              f"would read as PASS); refusing (fail-closed)")
         val = getattr(thr, thr_attr)             # resolves via the record model; raises if absent
+        raw_bar = g.value(ps, SH.minInclusive)   # the pack's own emitted bar, pre-overwrite
         g.set((ps, SH.minInclusive, Literal(Decimal(str(val)), datatype=XSD.decimal)))
-        g.set((ps, SH.message, Literal(msg_tmpl.format(v=val))))
+        # ADR-017: when the pack's raw bar ALREADY equals the live threshold, keep the pack's own
+        # sh:message — a regional pack (e.g. an emitted Lombardia mock, ADR-016) must not have its
+        # provenance text rewritten into the DM-1975 template (the ADR-008 wrong-message class:
+        # a violation note citing the wrong statute). Only a genuinely re-parameterized bar
+        # (edited-law recompile) regenerates the message, value included, so a stale number can
+        # still never be reported. Preservation is STRUCTURALLY guarded (red-team round 6):
+        # exactly ONE message triple (multiple would ALL survive into report rows — g.set never
+        # fires on the keep path) and a control-character-free plain literal; anything else
+        # regenerates deterministically. Message CONTENT stays pack-authored — packs are CODE
+        # under the ADR-016 trust model (in-repo, reviewed, emitter-verified); see ADR-017's
+        # honesty boundary.
+        raw_msgs = list(g.objects(ps, SH.message))
+        try:
+            keep_raw_msg = (len(raw_msgs) == 1 and _message_literal_ok(raw_msgs[0])
+                            and Decimal(str(raw_bar)) == Decimal(str(val)))
+        except Exception:                        # non-numeric raw bar -> regenerate (as before)
+            keep_raw_msg = False
+        if not keep_raw_msg:
+            g.set((ps, SH.message, Literal(msg_tmpl.format(v=val))))
     return g
+
+
+def _message_literal_ok(m) -> bool:
+    """A pack sh:message the loader may PRESERVE must be a non-empty, quote/backslash/control-
+    character-free string of sane length (gate_spike's _safe_literal envelope, mirrored here
+    without importing the spike)."""
+    s = str(m)
+    return 0 < len(s) <= 300 and '"' not in s and "\\" not in s \
+        and not any(ord(c) < 32 for c in s)
+
+
+def required_measurement_paths(thr, ttl_path: Optional[str] = None) -> frozenset:
+    """The acc: measurement paths the (cached, validated) shapes graph actually binds via
+    sh:path — how a caller identifies WHAT a target legal specification requires the extractor
+    to measure (e.g. whether acc:aeroRatio / window data is needed at all). Loading has already
+    refused any path outside SUPPORTED_MEASUREMENT_PATHS (ADR-017)."""
+    return frozenset(shapes_for(thr, ttl_path).objects(None, SH.path))
 
 
 def shapes_for(thr, path: Optional[str] = None) -> Graph:
