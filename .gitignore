@@ -38,6 +38,9 @@ data/raw/
 sandbox/data/*_report*.json
 sandbox/probe_*.py
 
+# Rendered verdict reports (regenerable: python sandbox/report_html.py <report>.json)
+sandbox/data/*.html
+
 # Track B gate-spike / replay run reports (regenerable: python sandbox/gate_spike.py or
 # gate_replay.py with --live --report ...)
 sandbox/spike_report_*.json
