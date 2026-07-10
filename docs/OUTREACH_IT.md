@@ -8,7 +8,7 @@ si riduce a: inviare N messaggi.
 ## Canali: regole di selezione
 
 **Inbound (il contatto nel README)** — criteri: credibile per uno sconosciuto, a basso
-attrito, letto ogni giorno. **Canale scelto: `matteo.panzeri@universitadipavia.it`** —
+attrito, letto ogni giorno. **Canale scelto: `matteo.panzeri01@universitadipavia.it`** —
 l'affiliazione universitaria è il segnale giusto per la fase di ricerca non commerciale
 (persona reale, nessuna vendita). Da rivedere alla fase commerciale (post-parere legale):
 lì serve un alias su dominio di progetto. Quando il repo è pubblico, aggiungere un issue
@@ -61,7 +61,7 @@ dealbreaker?). Chiudere sempre con la domanda snowball.
 > Le andrebbe la settimana prossima?
 >
 > Matteo Panzeri — Università di Pavia
-> matteo.panzeri@universitadipavia.it
+> matteo.panzeri01@universitadipavia.it
 
 ## Traccia d'intervista (30 min — R1 del piano di ricerca)
 

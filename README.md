@@ -88,7 +88,7 @@ Sei un geometra, architetto, ingegnere o BIM manager che tratta pratiche di abit
 piloti sui loro modelli IFC — gratuitamente, in cambio di feedback sul report.
 
 **Contatto:** Matteo Panzeri —
-[matteo.panzeri@universitadipavia.it](mailto:matteo.panzeri@universitadipavia.it)
+[matteo.panzeri01@universitadipavia.it](mailto:matteo.panzeri01@universitadipavia.it)
 (oggetto: "pilota ACC"). Materiale: [docs/OUTREACH_IT.md](docs/OUTREACH_IT.md).
 
 ## Status & scope honesty
