@@ -58,3 +58,6 @@ research/corpus/corpus_results.json
 # Local LLM weights
 *.gguf
 *.safetensors
+
+# Interview evidence logs may carry personal data — keep local
+research/interviews/LOG.md
