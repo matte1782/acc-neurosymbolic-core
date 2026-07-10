@@ -8,9 +8,11 @@ si riduce a: inviare N messaggi.
 ## Canali: regole di selezione
 
 **Inbound (il contatto nel README)** — criteri: credibile per uno sconosciuto, a basso
-attrito, letto ogni giorno. Usare un alias dedicato su dominio proprio (es. `acc@…` /
-`pilot@…`), MAI un indirizzo con brand estraneo al progetto; quando il repo è pubblico,
-aggiungere un issue template GitHub "Pilot / design partner" come secondo canale.
+attrito, letto ogni giorno. **Canale scelto: `matteo.panzeri@universitadipavia.it`** —
+l'affiliazione universitaria è il segnale giusto per la fase di ricerca non commerciale
+(persona reale, nessuna vendita). Da rivedere alla fase commerciale (post-parere legale):
+lì serve un alias su dominio di progetto. Quando il repo è pubblico, aggiungere un issue
+template GitHub "Pilot / design partner" come secondo canale.
 
 **Outbound (chi firma il messaggio)** — le persone rispondono alle persone: inviare dal
 proprio nome (email personale professionale o LinkedIn), mai da un alias di progetto.
@@ -57,6 +59,9 @@ dealbreaker?). Chiudere sempre con la domanda snowball.
 > e in cambio del suo tempo le mostro volentieri la verifica su un suo modello IFC.
 >
 > Le andrebbe la settimana prossima?
+>
+> Matteo Panzeri — Università di Pavia
+> matteo.panzeri@universitadipavia.it
 
 ## Traccia d'intervista (30 min — R1 del piano di ricerca)
 

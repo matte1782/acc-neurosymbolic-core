@@ -86,7 +86,10 @@ uvicorn api:app --port 8000                                   # optional self-ho
 Sei un geometra, architetto, ingegnere o BIM manager che tratta pratiche di abitabilità
 (CILA/SCIA/agibilità/Salva Casa)? Cerchiamo 3–5 professionisti per interviste da 30 minuti e
 piloti sui loro modelli IFC — gratuitamente, in cambio di feedback sul report.
-Materiale e contatti: [docs/OUTREACH_IT.md](docs/OUTREACH_IT.md).
+
+**Contatto:** Matteo Panzeri —
+[matteo.panzeri@universitadipavia.it](mailto:matteo.panzeri@universitadipavia.it)
+(oggetto: "pilota ACC"). Materiale: [docs/OUTREACH_IT.md](docs/OUTREACH_IT.md).
 
 ## Status & scope honesty
 
