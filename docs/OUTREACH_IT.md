@@ -5,6 +5,34 @@ interviste da 30 minuti + eventuale pilota. Questo file contiene il messaggio pr
 inviare e la traccia d'intervista, così il vincolo "farei le interviste se avessi le persone"
 si riduce a: inviare N messaggi.
 
+## Canali: regole di selezione
+
+**Inbound (il contatto nel README)** — criteri: credibile per uno sconosciuto, a basso
+attrito, letto ogni giorno. Usare un alias dedicato su dominio proprio (es. `acc@…` /
+`pilot@…`), MAI un indirizzo con brand estraneo al progetto; quando il repo è pubblico,
+aggiungere un issue template GitHub "Pilot / design partner" come secondo canale.
+
+**Outbound (chi firma il messaggio)** — le persone rispondono alle persone: inviare dal
+proprio nome (email personale professionale o LinkedIn), mai da un alias di progetto.
+Per i profili BIM-attivi, il DM LinkedIn tende a rendere più dell'email (il profilo È la
+verifica di credibilità).
+
+**Selezione dei destinatari — scala di calore (dall'alto):** (1) rete personale e contatti
+universitari (relatori/dipartimenti AEC); (2) LinkedIn filtrato per EVIDENZA — chi pubblica
+di Salva Casa / CILA / IFC si è auto-selezionato come raggiungibile; (3) email pubbliche
+degli studi, scrivendo a una persona nominata con un riferimento specifico; (4) come ultima
+istanza i registri pubblici (Albo / INI-PEC) — la PEC funziona ma è canale formale: solo
+individuale, mai in massa.
+
+**Disciplina (non è parere legale):** contatti individuali, manuali, in piccolo numero;
+chi sei + perché proprio loro + un "no grazie" facile. Niente liste, tracking o automazioni.
+
+**Mix dei 3–5 intervistati (screening: tratta pratiche di abitabilità? riceve/produce IFC?):**
+2 geometri/piccolo studio ad alto volume (la domanda-report R1) · 1 architetto (agibilità,
+terminologia) · 1 BIM manager (la realtà dei Qto/IFC — il problema "Duplex") · 1 volutamente
+NON-BIM tradizionalista (il confine di adozione: "esporta l'IFC con le quantità" è un
+dealbreaker?). Chiudere sempre con la domanda snowball.
+
 ## Dove cercare (in ordine di resa attesa)
 
 1. Contatti diretti / colleghi di corso che lavorano in studi tecnici (il canale più caldo).
