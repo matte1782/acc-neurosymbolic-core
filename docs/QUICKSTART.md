@@ -23,6 +23,12 @@ flip in ~100 ms. `NO_COLOR=1` for plain output.
 
 ## 2. Check a real IFC model (CLI)
 
+The test fixtures are NOT shipped in this repo (they are third-party IFC files, gitignored).
+Download them once into `sandbox/data/`: [AC20-FZK-Haus and AC20-Institute-Var-2 (KIT
+IFC examples)](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples) and
+[Duplex Apartment (buildingSMART sample files)](https://github.com/buildingsmart-community/Community-Sample-Test-Files) —
+or just use your own `.ifc`.
+
 ```bash
 cd sandbox
 python checker.py data/AC20-FZK-Haus.ifc                       # DM 5/7/1975 baseline
