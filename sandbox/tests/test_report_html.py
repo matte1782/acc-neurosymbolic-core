@@ -103,6 +103,28 @@ def test_ternary_badges_and_verdict_words() -> None:
     _check("verdict_no_spaces_not_certifiable", ">NON CERTIFICABILE<" in out4)
 
 
+def test_practitioner_language_from_interviews() -> None:
+    """R1/R3 findings (interviews #1-#2): fractions are the practitioner's native language;
+    the giustificazione column and the declared epoca metadata come verbatim from interview #2."""
+    # exact reciprocal bars render as clean fractions
+    _check("frac_exact_eighth", R._frac(0.125) == "1/8")
+    _check("frac_exact_tenth", R._frac(0.1) == "1/10")
+    # a measured 0.12 must NOT be beautified to 1/8 (it would suggest compliance): 1/8,3
+    _check("frac_never_beautified", R._frac(0.12) == "1/8,3")
+    _check("frac_zero_empty", R._frac(0.0) == "" and R._frac(None) == "")
+    rep = _report([_finding("ok", "habitable", True, True, True)], 0, 0)
+    out = R.render_report(rep)
+    _check("bar_shown_as_fraction", "1/8" in out)
+    _check("giustificazione_column_present",
+           "Giustificazione del tecnico" in out and 'class="giust"' in out)
+    # epoca: declared metadata, only when passed, never evaluated
+    out_epoca = R.render_report(rep, epoca="ante 1975")
+    _check("epoca_line_rendered",
+           "ante 1975" in out_epoca and "dichiarata" in out_epoca)
+    _check("epoca_absent_by_default", "Epoca di realizzazione" not in out)
+    _check("epoca_escaped", "<script>" not in R.render_report(rep, epoca="<script>x</script>"))
+
+
 def test_envelope_accepted() -> None:
     rep = _report([_finding("ok", "habitable", True, True, True)], 0, 0)
     envelope = {"verdict": "compliant",
@@ -129,6 +151,7 @@ def test_renders_real_fzk_report() -> None:
 def main() -> int:
     test_escaping_and_self_containment()
     test_ternary_badges_and_verdict_words()
+    test_practitioner_language_from_interviews()
     test_envelope_accepted()
     test_renders_real_fzk_report()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")

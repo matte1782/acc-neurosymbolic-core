@@ -58,6 +58,33 @@ def _fmt(v, unit: str = "") -> str:
     return f"{_E(str(v))}{_E(unit)}"
 
 
+def _frac(v) -> str:
+    """Un ratio come frazione 'alla maniera del tecnico' (R3, interviste #1-#2: i professionisti
+    parlano in 'un ottavo', 'un dodicesimo' — mai in decimali). Reciproco quasi intero -> '1/8';
+    altrimenti una cifra decimale al denominatore -> '1/8,3' (mai arrotondato a una frazione
+    'più bella': 0,12 NON è ≈1/8 — dirlo suggerirebbe una conformità che non c'è)."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return ""
+    if f <= 0:
+        return ""
+    d = 1.0 / f
+    if abs(d - round(d)) < 1e-6:
+        return f"1/{round(d)}"
+    return "1/" + f"{d:.1f}".replace(".", ",")
+
+
+def _ratio_cell(v) -> str:
+    """Cella del rapporto aeroilluminante: decimale (primario) + forma frazionaria (la lingua
+    del tecnico) come secondario."""
+    if v is None:
+        return '<span class="dim">—</span>'
+    frac = _frac(v)
+    tail = f' <span class="dim">({_E(frac)})</span>' if frac else ""
+    return f"{_E(str(v))}{tail}"
+
+
 _CSS = """
 :root { --ink:#1c1c1c; --dim:#6b7280; --line:#e5e7eb; --pass:#1a7f37; --fail:#b91c1c;
         --undet:#b45309; --bg-pass:#ecfdf5; --bg-fail:#fef2f2; --bg-undet:#fffbeb; }
@@ -89,6 +116,7 @@ td.num { text-align:right; white-space:nowrap; }
 .badge.undet { background:var(--bg-undet); color:var(--undet); }
 .badge.na { background:#f3f4f6; color:var(--dim); }
 ul.notes { margin:.15rem 0 0; padding-left:1.1rem; color:var(--dim); font-size:.85rem; }
+td.giust { min-width:9rem; border-left:1px dashed var(--dim); }
 .legend { font-size:.85rem; color:var(--dim); margin-top:.5rem; }
 footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--line);
          font-size:.82rem; color:var(--dim); }
@@ -96,8 +124,13 @@ footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--line);
 """
 
 
-def render_report(data: dict, title: Optional[str] = None) -> str:
-    """Render a checker report dict (or the API envelope wrapping one) to standalone HTML."""
+def render_report(data: dict, title: Optional[str] = None,
+                  epoca: Optional[str] = None) -> str:
+    """Render a checker report dict (or the API envelope wrapping one) to standalone HTML.
+
+    `epoca`: epoca di realizzazione dell'immobile, DICHIARATA dall'operatore (interviste #1-#2:
+    le regole applicabili dipendono da quando l'edificio è nato e dal comune — il dato viene
+    riportato in testata come metadato dichiarato, MAI valutato dal motore)."""
     pack = None
     if "report" in data and "verdict" in data:          # API envelope
         pack = data.get("pack")
@@ -108,10 +141,19 @@ def render_report(data: dict, title: Optional[str] = None) -> str:
         model_name = report.get("model")
     vcls, vit, ven = _verdict(report)
     thr = report.get("thresholds", {})
+    aero_bar = thr.get("aero_illuminating_ratio")
+    aero_bar_txt = (f"{_E(_frac(aero_bar))} ({_fmt(aero_bar)})" if _frac(aero_bar)
+                    else _fmt(aero_bar))
     bars = (f"altezza abitabile ≥ {_fmt(thr.get('min_height_habitable_m'), ' m')} · "
             f"accessori ≥ {_fmt(thr.get('min_height_accessory_m'), ' m')} · "
             f"Salva Casa ≥ {_fmt(thr.get('min_height_salva_casa_m'), ' m')} · "
-            f"aeroilluminante ≥ {_fmt(thr.get('aero_illuminating_ratio'))}")
+            f"aeroilluminante ≥ {aero_bar_txt}")
+    epoca_line = ""
+    if epoca:
+        epoca_line = (f'<div class="sub">Epoca di realizzazione (dichiarata dall\'operatore): '
+                      f'<b>{_E(str(epoca))}</b> — le regole applicabili possono variare per '
+                      f'epoca di costruzione e per comune: la verifica del regime corretto '
+                      f'resta al tecnico.</div>')
     head_title = _E(title or "Rapporto di verifica — abitabilità")
     pack_line = ""
     if pack:
@@ -135,10 +177,11 @@ def render_report(data: dict, title: Optional[str] = None) -> str:
             f'<td class="num">{_fmt(f.get("height_required_m"), " m")}</td>'
             f'<td class="num">{_fmt(f.get("floor_area_m2"), " m²")}</td>'
             f'<td class="num">{_fmt(f.get("window_area_m2"), " m²")}</td>'
-            f'<td class="num">{_fmt(f.get("aero_ratio"))}</td>'
+            f'<td class="num">{_ratio_cell(f.get("aero_ratio"))}</td>'
             f"<td>{_badge(f.get('height_ok'))}</td>"
             f"<td>{_badge(f.get('aero_ok'), na=aero_na)}</td>"
             f"<td>{_badge(comp)}</td>"
+            '<td class="giust"></td>'
             "</tr>")
     mono = report.get("monostanza") or {}
     mono_line = ""
@@ -160,6 +203,7 @@ def render_report(data: dict, title: Optional[str] = None) -> str:
 <div class="sub">Modello: <b>{_E(str(model_name))}</b> · schema {_E(str(report.get('schema')))}
  · regime Salva Casa: {salva}</div>
 {pack_line}
+{epoca_line}
 <div class="sub">Soglie applicate (applied legal bars): {bars}</div>
 <div class="verdict {vcls}">{vit}</div> <span class="sub">({_E(ven)})</span>
 <div class="tiles">
@@ -175,6 +219,7 @@ def render_report(data: dict, title: Optional[str] = None) -> str:
 <thead><tr>
  <th>Locale / note</th><th>Classe</th><th>Altezza</th><th>Min.</th><th>Pavimento</th>
  <th>Finestre</th><th>Aeroillum.</th><th>Altezza</th><th>Aero</th><th>Esito</th>
+ <th>Giustificazione del tecnico</th>
 </tr></thead>
 <tbody>
 {''.join(rows)}
@@ -184,7 +229,9 @@ def render_report(data: dict, title: Optional[str] = None) -> str:
 soddisfatto · <span class="badge fail">violazione</span> requisito non soddisfatto ·
 <span class="badge undet">non det.</span> il dato non è misurabile dal modello: il motore
 <b>rifiuta di indovinare</b> — un locale non misurabile non è mai dichiarato conforme ·
-<span class="badge na">n/a</span> requisito non applicabile alla classe del locale.</div>
+<span class="badge na">n/a</span> requisito non applicabile alla classe del locale.
+L'ultima colonna è volutamente vuota: è lo spazio per i richiami del tecnico
+(es. "non è un 1/8, per questi motivi è comunque legittimo").</div>
 {mono_line}
 <footer>
 Questo documento è la resa leggibile del verdetto JSON del motore ACC (deterministico,
@@ -205,11 +252,13 @@ def main(argv=None) -> int:
     ap.add_argument("json_path", help="checker report JSON (or API /evaluate envelope)")
     ap.add_argument("-o", "--out", help="output .html (default: alongside the input)")
     ap.add_argument("--title", help="document title (e.g. the pratica reference)")
+    ap.add_argument("--epoca", help="epoca di realizzazione dichiarata (es. 'ante 1975') — "
+                                    "riportata in testata come metadato, mai valutata")
     args = ap.parse_args(argv)
     with open(args.json_path, encoding="utf-8") as fh:
         data = json.load(fh)
     out = args.out or (args.json_path.rsplit(".", 1)[0] + ".html")
-    html_text = render_report(data, title=args.title)
+    html_text = render_report(data, title=args.title, epoca=args.epoca)
     with open(out, "w", encoding="utf-8") as fh:
         fh.write(html_text)
     print(f"wrote {out}")
