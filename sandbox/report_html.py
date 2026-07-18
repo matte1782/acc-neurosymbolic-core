@@ -164,8 +164,25 @@ def render_report(data: dict, title: Optional[str] = None,
     for f in report.get("findings", []):
         occ = str(f.get("occupancy"))
         aero_na = occ == "accessory"
+        # Delta di conformita' (intervista #2, art. 36-bis: "lo porto almeno a un 10"): quando un
+        # requisito fallisce, quanto manca per conformare — INDICATIVO, dal numeratore
+        # conservativo; la progettazione resta al tecnico.
+        deltas = []
+        if f.get("aero_ok") is False and f.get("floor_area_m2") and aero_bar:
+            need = float(aero_bar) * float(f["floor_area_m2"]) - float(f.get("window_area_m2") or 0)
+            if need > 0:
+                deltas.append(f"per il {_frac(aero_bar)} mancano ~"
+                              + f"{need:.2f}".replace(".", ",")
+                              + " m² di superficie finestrata (indicativo)")
+        if f.get("height_ok") is False and f.get("height_m") and f.get("height_required_m"):
+            gap = float(f["height_required_m"]) - float(f["height_m"])
+            if gap > 0:
+                deltas.append("altezza sotto il minimo di "
+                              + f"{gap:.2f}".replace(".", ",") + " m")
+        delta_items = "".join(f'<li class="dim">{_E(d)}</li>' for d in deltas)
         notes = "".join(f"<li>{_E(str(n))}</li>" for n in f.get("notes", []))
-        notes_html = f'<ul class="notes">{notes}</ul>' if notes else ""
+        notes_html = (f'<ul class="notes">{notes}{delta_items}</ul>'
+                      if (notes or delta_items) else "")
         comp = f.get("compliant")
         rows.append(
             "<tr>"

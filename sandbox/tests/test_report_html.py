@@ -125,6 +125,25 @@ def test_practitioner_language_from_interviews() -> None:
     _check("epoca_escaped", "<script>" not in R.render_report(rep, epoca="<script>x</script>"))
 
 
+def test_conformity_deltas() -> None:
+    """Interview #2 (art. 36-bis): a failing check shows HOW FAR from conformity — indicative,
+    never on passing rooms."""
+    bad = _finding("salotto", "habitable", False, False, False)
+    bad["height_m"] = 2.5
+    bad["aero_ratio"] = 0.1
+    bad["window_area_m2"] = 1.0        # floor 10.0, bar 0.125 -> serve 1.25 -> mancano 0.25
+    out = R.render_report(_report([bad], 1, 0))
+    _check("delta_aero_missing_m2", "mancano ~0,25 m² di superficie finestrata" in out)
+    _check("delta_aero_names_the_bar", "per il 1/8" in out)
+    _check("delta_height_gap", "altezza sotto il minimo di 0,20 m" in out)
+    ok = _finding("studio", "habitable", True, True, True)
+    out2 = R.render_report(_report([ok], 0, 0))
+    _check("delta_absent_on_passing_room", "mancano" not in out2 and "sotto il minimo" not in out2)
+    und = _finding("cantina", "habitable", None, True, None)
+    out3 = R.render_report(_report([und], 0, 1))
+    _check("delta_absent_on_undetermined", "mancano" not in out3)
+
+
 def test_envelope_accepted() -> None:
     rep = _report([_finding("ok", "habitable", True, True, True)], 0, 0)
     envelope = {"verdict": "compliant",
@@ -152,6 +171,7 @@ def main() -> int:
     test_escaping_and_self_containment()
     test_ternary_badges_and_verdict_words()
     test_practitioner_language_from_interviews()
+    test_conformity_deltas()
     test_envelope_accepted()
     test_renders_real_fzk_report()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
