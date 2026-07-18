@@ -85,6 +85,54 @@ def _ratio_cell(v) -> str:
     return f"{_E(str(v))}{tail}"
 
 
+# Traduzione italiana delle note del motore (adversarial check post-interviste: un report
+# IT-first non può mostrare note inglesi a un geometra). Regex -> template; una nota non
+# riconosciuta passa INVARIATA (mai perdere informazione, mai inventare traduzioni).
+import re as _re
+
+_NOTE_IT = (
+    (_re.compile(r"^SHACL: height below the ([\d.]+) m habitable minimum \(DM 1975 art\.1\)$"),
+     lambda m: f"SHACL: altezza sotto il minimo abitabile di {m.group(1)} m (DM 1975 art. 1)"),
+    (_re.compile(r"^SHACL: height below the ([\d.]+) m accessory minimum \(DM 1975 art\.1\)$"),
+     lambda m: f"SHACL: altezza sotto il minimo per locali accessori di {m.group(1)} m (DM 1975 art. 1)"),
+    (_re.compile(r"^SHACL: height below the ([\d.]+) m Salva-Casa derogated minimum \(DPR 380/2001 art\.24 c\.5-bis\)$"),
+     lambda m: f"SHACL: altezza sotto il minimo derogato Salva Casa di {m.group(1)} m (DPR 380/2001 art. 24 c. 5-bis)"),
+    (_re.compile(r"^SHACL: aero-illuminating ratio below 1/8 of floor area \(DM 1975 art\.5\)$"),
+     lambda m: "SHACL: rapporto aeroilluminante sotto 1/8 della superficie del pavimento (DM 1975 art. 5)"),
+    (_re.compile(r"^SHACL: aero-illuminating ratio below the ([\d.]+) .*$"),
+     lambda m: f"SHACL: rapporto aeroilluminante sotto il minimo di {m.group(1)} della superficie del pavimento"),
+    (_re.compile(r"^aero ratio N/A for accessory room.*$"),
+     lambda m: "rapporto aeroilluminante non applicabile ai locali accessori (regole di ventilazione separate)"),
+    (_re.compile(r"^no window via IfcRelSpaceBoundary.*$"),
+     lambda m: "nessuna finestra collegata via IfcRelSpaceBoundary: il rapporto potrebbe essere sottostimato"),
+    (_re.compile(r"^untrustworthy serving-window area.*$"),
+     lambda m: "superficie finestrata non attendibile (non misurabile o maggiore del pavimento): "
+               "il rapporto non è delimitabile; non determinabile"),
+    (_re.compile(r"^aero below the bar only on a rough boundary-geometry lower bound.*$"),
+     lambda m: "aero sotto la soglia solo su una stima geometrica per difetto: l'area reale "
+               "potrebbe essere maggiore; non determinabile"),
+    (_re.compile(r"^aero pass proven on a boundary-geometry lower bound.*$"),
+     lambda m: "aero conforme provato su una stima geometrica per difetto (superficie reale >= stima)"),
+    (_re.compile(r"^spatial fallback \(model omits IfcRelSpaceBoundary\): (\d+) candidate window.*$"),
+     lambda m: f"fallback spaziale (il modello non ha IfcRelSpaceBoundary): {m.group(1)} finestre "
+               f"candidate per prossimità; associazione non provata, aero non delimitabile; non determinabile"),
+    (_re.compile(r"^spatial fallback: even counting all (\d+) candidate window.*$"),
+     lambda m: f"fallback spaziale: anche contando tutte le {m.group(1)} finestre candidate il "
+               f"rapporto resta sotto la soglia; la violazione è confermata"),
+    (_re.compile(r"^spatial fallback: no candidate window near this space.*$"),
+     lambda m: "fallback spaziale: nessuna finestra candidata vicino al locale; la geometria "
+               "conferma l'assenza"),
+)
+
+
+def _note_it(n: str) -> str:
+    for rx, sub in _NOTE_IT:
+        m = rx.match(n)
+        if m:
+            return sub(m)
+    return n
+
+
 _CSS = """
 :root { --ink:#1c1c1c; --dim:#6b7280; --line:#e5e7eb; --pass:#1a7f37; --fail:#b91c1c;
         --undet:#b45309; --bg-pass:#ecfdf5; --bg-fail:#fef2f2; --bg-undet:#fffbeb; }
@@ -117,6 +165,7 @@ td.num { text-align:right; white-space:nowrap; }
 .badge.na { background:#f3f4f6; color:var(--dim); }
 ul.notes { margin:.15rem 0 0; padding-left:1.1rem; color:var(--dim); font-size:.85rem; }
 td.giust { min-width:9rem; border-left:1px dashed var(--dim); }
+li.deficit { color:var(--undet); }
 .legend { font-size:.85rem; color:var(--dim); margin-top:.5rem; }
 footer { margin-top:2.5rem; padding-top:1rem; border-top:1px solid var(--line);
          font-size:.82rem; color:var(--dim); }
@@ -180,7 +229,7 @@ def render_report(data: dict, title: Optional[str] = None,
                 deltas.append("altezza sotto il minimo di "
                               + f"{gap:.2f}".replace(".", ",") + " m")
         delta_items = "".join(f'<li class="dim">{_E(d)}</li>' for d in deltas)
-        notes = "".join(f"<li>{_E(str(n))}</li>" for n in f.get("notes", []))
+        notes = "".join(f"<li>{_E(_note_it(str(n)))}</li>" for n in f.get("notes", []))
         notes_html = (f'<ul class="notes">{notes}{delta_items}</ul>'
                       if (notes or delta_items) else "")
         comp = f.get("compliant")

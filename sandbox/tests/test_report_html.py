@@ -125,6 +125,25 @@ def test_practitioner_language_from_interviews() -> None:
     _check("epoca_escaped", "<script>" not in R.render_report(rep, epoca="<script>x</script>"))
 
 
+def test_italian_engine_notes() -> None:
+    """Adversarial finding post-interviste: un report IT-first non mostra note inglesi.
+    Le note note del motore si traducono via _note_it; una nota sconosciuta passa INVARIATA."""
+    f = _finding("bad", "habitable", False, True, False,
+                 notes=["SHACL: aero-illuminating ratio below 1/8 of floor area (DM 1975 art.5)",
+                        "SHACL: height below the 2.70 m habitable minimum (DM 1975 art.1)",
+                        "una nota sconosciuta resta com'e'"])
+    out = R.render_report(_report([f], 1, 0))
+    _check("note_it_aero", "rapporto aeroilluminante sotto 1/8 della superficie" in out)
+    _check("note_it_height", "altezza sotto il minimo abitabile di 2.70 m" in out)
+    _check("note_it_no_english_shacl",
+           "below 1/8 of floor area" not in out and "height below the" not in out)
+    _check("note_it_unknown_passthrough", "una nota sconosciuta resta com&#x27;e&#x27;" in out
+           or "una nota sconosciuta resta com'e'" in out)
+    _check("note_it_accessory_na",
+           "non applicabile ai locali accessori"
+           in R._note_it("aero ratio N/A for accessory room (separate ventilation rules)"))
+
+
 def test_conformity_deltas() -> None:
     """Interview #2 (art. 36-bis): a failing check shows HOW FAR from conformity — indicative,
     never on passing rooms."""
@@ -171,6 +190,7 @@ def main() -> int:
     test_escaping_and_self_containment()
     test_ternary_badges_and_verdict_words()
     test_practitioner_language_from_interviews()
+    test_italian_engine_notes()
     test_conformity_deltas()
     test_envelope_accepted()
     test_renders_real_fzk_report()
