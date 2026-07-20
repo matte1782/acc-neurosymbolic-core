@@ -1,5 +1,7 @@
 # ACC Neurosymbolic Core
 
+[![gate](https://github.com/matte1782/acc-neurosymbolic-core/actions/workflows/gate.yml/badge.svg)](https://github.com/matte1782/acc-neurosymbolic-core/actions/workflows/gate.yml)
+
 **Deterministic Italian building-compliance verdicts from IFC models — fail-closed by design.**
 
 Point it at an openBIM model and it checks the DM 5/7/1975 habitability requirements

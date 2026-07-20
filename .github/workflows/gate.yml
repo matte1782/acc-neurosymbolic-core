@@ -1,0 +1,100 @@
+# The dual-mode test gate in CI (ADR-020, closes ADR-011's declared debt:
+# "the gate exists but nothing invokes it automatically").
+#
+# Fixture policy (the .ifc files are third-party and deliberately NOT in the repo):
+#   * FZK-Haus + Institute (KIT, ifcwiki.org): REQUIRED — downloaded on cache miss and
+#     verified against pinned NEWLINE-NORMALIZED sha256 (the server serves CRLF, local
+#     copies are LF; same git-eol-tolerant discipline as the corpus manifest, ADR-014).
+#     A hash mismatch fails the job loudly: silently different fixtures would move the
+#     frozen controls for reasons invisible in the diff.
+#   * Duplex (buildingSMART community, Git LFS): BEST EFFORT — the upstream repo's LFS
+#     budget is intermittently exhausted (observed 2026-07-20). When unavailable, the
+#     suites SKIP their Duplex-dependent checks (each suite keeps >=1 PASS, so the
+#     runner's zero-checks guard stays satisfied) and a workflow warning is emitted.
+name: gate
+
+on:
+  push:
+    branches: [main, "audit/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sandbox/requirements.txt
+
+      - name: Restore IFC fixtures cache
+        id: fixtures
+        uses: actions/cache@v4
+        with:
+          path: fixtures-cache
+          key: ifc-fixtures-v1
+
+      - name: Fetch IFC fixtures (KIT required, Duplex best-effort)
+        if: steps.fixtures.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p fixtures-cache
+          curl -fL --retry 3 --max-time 300 -o fixtures-cache/AC20-FZK-Haus.ifc \
+            "https://www.ifcwiki.org/images/e/e3/AC20-FZK-Haus.ifc"
+          curl -fL --retry 3 --max-time 600 -o fixtures-cache/AC20-Institute-Var-2.ifc \
+            "https://www.ifcwiki.org/images/9/98/AC20-Institute-Var-2.ifc"
+          DUPLEX="IFC 2.3.0.1 (IFC 2x3)/Duplex Apartment/Duplex_A_20110907.ifc"
+          if GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --sparse \
+               https://github.com/buildingsmart-community/Community-Sample-Test-Files.git /tmp/bsc \
+             && git -C /tmp/bsc sparse-checkout set "IFC 2.3.0.1 (IFC 2x3)/Duplex Apartment" \
+             && git -C /tmp/bsc lfs pull --include "$DUPLEX" \
+             && ! grep -q "git-lfs.github.com" "/tmp/bsc/$DUPLEX"; then
+            cp "/tmp/bsc/$DUPLEX" fixtures-cache/
+          else
+            echo "::warning::Duplex fixture unavailable (upstream LFS budget) — Duplex-dependent checks will SKIP"
+          fi
+
+      - name: Verify fixture integrity (newline-normalized sha256, fail-closed)
+        run: |
+          python - <<'EOF'
+          import hashlib, os, sys
+          PINNED = {  # normalized: CRLF -> LF before hashing
+              "AC20-FZK-Haus.ifc":
+                  "ea6f04eaf92fac4d7ad0038bc3d2dfea4c094dd3f516ecc33c50bf1835ca108d",
+              "AC20-Institute-Var-2.ifc":
+                  "a06b9cf1922cc0a1e200719189054510dd3e1d188292325f66614f7c1fdb37b4",
+              "Duplex_A_20110907.ifc":
+                  "b347a2c8aa8fff6db896a4417a9c50c22ac0ccd7c5cfc22b99b8d29336c606ed",
+          }
+          REQUIRED = {"AC20-FZK-Haus.ifc", "AC20-Institute-Var-2.ifc"}
+          bad = missing = 0
+          for name, want in PINNED.items():
+              p = os.path.join("fixtures-cache", name)
+              if not os.path.exists(p):
+                  if name in REQUIRED:
+                      print(f"MISSING required fixture: {name}"); missing += 1
+                  else:
+                      print(f"absent optional fixture: {name} (checks will SKIP)")
+                  continue
+              got = hashlib.sha256(open(p, "rb").read().replace(b"\r\n", b"\n")).hexdigest()
+              if got != want:
+                  print(f"HASH MISMATCH {name}: got {got}, pinned {want}"); bad += 1
+              else:
+                  print(f"ok {name}")
+          sys.exit(1 if (bad or missing) else 0)
+          EOF
+
+      - name: Install fixtures into sandbox/data
+        run: mkdir -p sandbox/data && cp fixtures-cache/*.ifc sandbox/data/
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r sandbox/requirements.txt pytest
+
+      - name: Run the dual-mode gate
+        run: bash scripts/run_all_tests.sh

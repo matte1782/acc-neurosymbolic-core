@@ -27,7 +27,10 @@ The test fixtures are NOT shipped in this repo (they are third-party IFC files, 
 Download them once into `sandbox/data/`: [AC20-FZK-Haus and AC20-Institute-Var-2 (KIT
 IFC examples)](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples) and
 [Duplex Apartment (buildingSMART sample files)](https://github.com/buildingsmart-community/Community-Sample-Test-Files) —
-or just use your own `.ifc`.
+or just use your own `.ifc`. Note: the Duplex file is Git-LFS-hosted upstream and its
+download quota is intermittently exhausted; every test suite degrades to counted SKIPs
+when a fixture is absent (see also `.github/workflows/gate.yml`, which automates all this
+with pinned integrity hashes).
 
 ```bash
 cd sandbox
