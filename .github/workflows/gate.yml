@@ -39,7 +39,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: fixtures-cache
-          key: ifc-fixtures-v1
+          key: ifc-fixtures-v2
 
       - name: Fetch IFC fixtures (KIT required, Duplex best-effort)
         if: steps.fixtures.outputs.cache-hit != 'true'
