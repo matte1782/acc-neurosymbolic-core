@@ -73,6 +73,19 @@ redistributed by this product):
 - buildingSMART bSDD dictionary content: per-dictionary licenses (SPDX
   declared by each publisher).
 
+Test fixture re-hosted for CI (NOT part of the product; used only to run the
+test suite in continuous integration):
+- Duplex_A_20110907.ifc — "Duplex Apartment" sample IFC model, exported from
+  Autodesk Revit Architecture 2011 (2011-09-07). Obtained from the buildingSMART
+  Community Sample & Test Files repository
+  (https://github.com/buildingsmart-community/Community-Sample-Test-Files),
+  licensed Creative Commons Attribution 4.0 International (CC-BY-4.0). A
+  byte-identical copy is mirrored as this repository's `fixtures-v1` GitHub
+  release asset solely because the upstream Git-LFS quota is intermittently
+  exhausted; the file is not modified. The KIT fixtures (AC20-FZK-Haus,
+  AC20-Institute-Var-2) are fetched at CI time from ifcwiki.org and are not
+  re-hosted.
+
 ================================================================================
 LGPL-3.0 BOUNDARY STATEMENT (ifcopenshell)
 ================================================================================

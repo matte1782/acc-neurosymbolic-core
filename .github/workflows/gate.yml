@@ -7,10 +7,12 @@
 #     copies are LF; same git-eol-tolerant discipline as the corpus manifest, ADR-014).
 #     A hash mismatch fails the job loudly: silently different fixtures would move the
 #     frozen controls for reasons invisible in the diff.
-#   * Duplex (buildingSMART community, Git LFS): BEST EFFORT — the upstream repo's LFS
-#     budget is intermittently exhausted (observed 2026-07-20). When unavailable, the
-#     suites SKIP their Duplex-dependent checks (each suite keeps >=1 PASS, so the
-#     runner's zero-checks guard stays satisfied) and a workflow warning is emitted.
+#   * Duplex (buildingSMART community, CC-BY-4.0): the upstream Git-LFS budget is
+#     intermittently exhausted (observed 2026-07-20), so we fetch a byte-identical mirror
+#     re-hosted as this repo's `fixtures-v1` release asset (attribution in NOTICE and the
+#     release notes; hash-pinned like the others). Kept BEST EFFORT: if even the mirror is
+#     unreachable the suites SKIP their Duplex-dependent checks (each keeps >=1 PASS, so the
+#     runner's zero-checks guard holds) and a workflow warning is emitted.
 name: gate
 
 on:
@@ -47,16 +49,11 @@ jobs:
             "https://www.ifcwiki.org/images/e/e3/AC20-FZK-Haus.ifc"
           curl -fL --retry 3 --max-time 600 -o fixtures-cache/AC20-Institute-Var-2.ifc \
             "https://www.ifcwiki.org/images/9/98/AC20-Institute-Var-2.ifc"
-          DUPLEX="IFC 2.3.0.1 (IFC 2x3)/Duplex Apartment/Duplex_A_20110907.ifc"
-          if GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --filter=blob:none --sparse \
-               https://github.com/buildingsmart-community/Community-Sample-Test-Files.git /tmp/bsc \
-             && git -C /tmp/bsc sparse-checkout set "IFC 2.3.0.1 (IFC 2x3)/Duplex Apartment" \
-             && git -C /tmp/bsc lfs pull --include "$DUPLEX" \
-             && ! grep -q "git-lfs.github.com" "/tmp/bsc/$DUPLEX"; then
-            cp "/tmp/bsc/$DUPLEX" fixtures-cache/
-          else
-            echo "::warning::Duplex fixture unavailable (upstream LFS budget) — Duplex-dependent checks will SKIP"
-          fi
+          # Duplex from our CC-BY-4.0 mirror (release asset); it is hash-verified in the next
+          # step regardless, so a corrupted/partial download still fails closed.
+          curl -fL --retry 3 --max-time 120 -o fixtures-cache/Duplex_A_20110907.ifc \
+            "https://github.com/matte1782/acc-neurosymbolic-core/releases/download/fixtures-v1/Duplex_A_20110907.ifc" \
+            || echo "::warning::Duplex mirror unreachable — Duplex-dependent checks will SKIP"
 
       - name: Verify fixture integrity (newline-normalized sha256, fail-closed)
         run: |
