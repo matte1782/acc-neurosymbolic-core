@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 from typing import Optional
 
 _E = html.escape
@@ -187,7 +188,10 @@ def render_report(data: dict, title: Optional[str] = None,
         model_name = (data.get("model") or {}).get("filename")
     else:
         report = data
-        model_name = report.get("model")
+        # Only the file NAME: the engine records the full path it was run on, and a report is a
+        # document that gets forwarded — a local/temp path (with the operator's user directory)
+        # is both noise and a small privacy leak.
+        model_name = os.path.basename(str(report.get("model") or "")) or report.get("model")
     vcls, vit, ven = _verdict(report)
     thr = report.get("thresholds", {})
     aero_bar = thr.get("aero_illuminating_ratio")
@@ -293,11 +297,9 @@ def render_report(data: dict, title: Optional[str] = None,
 </table>
 <div class="legend"><b>Legenda.</b> <span class="badge pass">conforme</span> requisito
 soddisfatto · <span class="badge fail">violazione</span> requisito non soddisfatto ·
-<span class="badge undet">non det.</span> il dato non è misurabile dal modello: il motore
-<b>rifiuta di indovinare</b> — un locale non misurabile non è mai dichiarato conforme ·
-<span class="badge na">n/a</span> requisito non applicabile alla classe del locale.
-L'ultima colonna è volutamente vuota: è lo spazio per i richiami del tecnico
-(es. "non è un 1/8, per questi motivi è comunque legittimo").</div>
+<span class="badge undet">non det.</span> il dato non è ricavabile dal modello: l'esito non
+viene compilato · <span class="badge na">n/a</span> requisito non applicabile alla classe
+del locale.</div>
 {mono_line}
 <footer>
 Questo documento è la resa leggibile del verdetto JSON del motore ACC (deterministico,

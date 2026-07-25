@@ -1072,8 +1072,11 @@ def monostanza_status(model) -> dict:
         return {"applicable": True, "status": "undetermined",
                 "reason": "monolocale unit + occupant count present, but monostanza surface "
                           "evaluation is deferred to a monolocale fixture (no surface quantity)"}
+    # The reason must describe THIS model, never a fixture by name: the string is user-visible
+    # (it reaches the report), and naming an unrelated fixture there was a real defect.
     return {"applicable": None, "status": "undetermined",
-            "reason": "no monolocale flag + occupant count (Duplex has a dwelling-unit NAME only)"}
+            "reason": "no monolocale flag + occupant count in the model "
+                      "(a dwelling-unit name alone is neither)"}
 
 
 def materialize_ifcspaces(model, scale: float):
