@@ -106,6 +106,10 @@ _NOTE_IT = (
      lambda m: "rapporto aeroilluminante non applicabile ai locali accessori (regole di ventilazione separate)"),
     (_re.compile(r"^no window via IfcRelSpaceBoundary.*$"),
      lambda m: "nessuna finestra collegata via IfcRelSpaceBoundary: il rapporto potrebbe essere sottostimato"),
+    (_re.compile(r"^no Qto_SpaceBaseQuantities\.Height.*$"),
+     lambda m: "altezza non presente tra le quantità del modello: non ricavabile"),
+    (_re.compile(r"^no Qto_SpaceBaseQuantities\.(NetFloorArea|GrossFloorArea).*$"),
+     lambda m: "superficie di pavimento non presente tra le quantità del modello: non ricavabile"),
     (_re.compile(r"^untrustworthy serving-window area.*$"),
      lambda m: "superficie finestrata non attendibile (non misurabile o maggiore del pavimento): "
                "il rapporto non è delimitabile; non determinabile"),
@@ -256,9 +260,25 @@ def render_report(data: dict, title: Optional[str] = None,
     mono = report.get("monostanza") or {}
     mono_line = ""
     if mono:
+        # Stato e motivo tradotti: il report e' IT-first, e una sezione in inglese sposta
+        # l'attenzione del lettore sulla lingua invece che sul merito.
+        _MONO_ST = {"undetermined": "non determinabile", "compliant": "conforme",
+                    "violation": "violazione"}
+        _MONO_RE = (
+            (_re.compile(r"^no monolocale flag \+ occupant count in the model.*$"),
+             "il modello non dichiara ne' che si tratta di monolocale ne' il numero di occupanti"),
+            (_re.compile(r"^monolocale unit \+ occupant count present, but monostanza surface "
+                         r"evaluation is deferred.*$"),
+             "monolocale e numero di occupanti presenti, ma manca la superficie da verificare"),
+        )
+        st = str(mono.get("status", ""))
+        reason = str(mono.get("reason", ""))
+        for rx, sub in _MONO_RE:
+            if rx.match(reason):
+                reason = sub
+                break
         mono_line = (f'<h2>Alloggio monostanza (canale separato)</h2><div class="sub">'
-                     f'stato: <b>{_E(str(mono.get("status")))}</b> — '
-                     f'{_E(str(mono.get("reason", "")))}</div>')
+                     f'stato: <b>{_E(_MONO_ST.get(st, st))}</b> · {_E(reason)}</div>')
     salva = "sì" if report.get("salva_casa") else "no"
     return f"""<!DOCTYPE html>
 <html lang="it">
@@ -274,17 +294,14 @@ def render_report(data: dict, title: Optional[str] = None,
  · regime Salva Casa: {salva}</div>
 {pack_line}
 {epoca_line}
-<div class="sub">Soglie applicate (applied legal bars): {bars}</div>
-<div class="verdict {vcls}">{vit}</div> <span class="sub">({_E(ven)})</span>
+<div class="sub">Soglie applicate: {bars}</div>
+<div class="verdict {vcls}">{vit}</div>
 <div class="tiles">
- <div class="tile"><b>{report.get('spaces_evaluated', 0)}</b>locali valutati<br>
-  <span class="dim">spaces evaluated</span></div>
- <div class="tile"><b>{report.get('violations', 0)}</b>violazioni<br>
-  <span class="dim">violations</span></div>
- <div class="tile"><b>{report.get('spaces_undetermined', 0)}</b>non determinabili<br>
-  <span class="dim">undetermined</span></div>
+ <div class="tile"><b>{report.get('spaces_evaluated', 0)}</b>locali valutati</div>
+ <div class="tile"><b>{report.get('violations', 0)}</b>violazioni</div>
+ <div class="tile"><b>{report.get('spaces_undetermined', 0)}</b>non determinabili</div>
 </div>
-<h2>Esito per locale (per-space findings)</h2>
+<h2>Esito per locale</h2>
 <table>
 <thead><tr>
  <th>Locale / note</th><th>Classe</th><th>Altezza</th><th>Min.</th><th>Pavimento</th>
