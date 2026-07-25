@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """Differenziale eseguibile: la stessa stanza, il motore e le regole locali (studio 25/07/2026).
 
+    CORREZIONE 26/07/2026 (v3). La ri-codifica cieca M-1 (tre agenti indipendenti sul solo testo
+    primario, preregistrata) piu' la LETTURA DELLA FIGURA a pag. 69 del PDF (persa dall'estrazione
+    testuale) hanno stabilito che: (a) la banda "p" dell'art. 105 c.4 e' ancorata all'INTRADOSSO
+    dell'aggetto, non alla testa della finestra come assumevano v1/v2 — senza quella quota il
+    verdetto e' NON DETERMINABILE; (b) Milano ha DUE requisiti distinti, aerante (art. 103, anta
+    al lordo del telaio, 1/10 del piano di calpestio) e illuminante (art. 105): questo script
+    modella SOLO l'illuminante; (c) restano non determinabili dal testo: L perpendicolare vs 45
+    gradi, la clausola del 30%, ribalta/lucernari sotto i 30 gradi, gli operandi della regola di
+    profondita'. Dettaglio in research/M1_RESULTS_LOCAL.md.
+
     CORREZIONE 25/07/2026 (v2). La v1 di questo script conteneva un errore di metodo che ne
     invalidava la conclusione principale, ed e' stato trovato da una revisione avversariale della
     proposta ADR-021 che si basava su di esso. Documentato qui invece che riscritto in silenzio.
@@ -74,6 +84,10 @@ class Locale:
     superficie_apribile_m2: Optional[float] = None   # anta netta; None = derivata dalla luce
     aggetto_sovrastante_m: float = 0.0   # balcone/veletta sopra la finestra (0 = nessuno)
     parete_a_sud: bool = False           # entro +/-60 gradi da sud
+    # v3 (ri-codifica cieca M-1 + schema pag. 69 del PDF): la banda "p" di Milano art. 105 c.4
+    # e' ancorata all'INTRADOSSO dell'aggetto, non alla testa della finestra. Senza questa quota
+    # il verdetto milanese sotto aggetto e' NON DETERMINABILE (niente ancoraggi impliciti).
+    quota_intradosso_aggetto_m: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.superficie_apribile_m2 is None:
@@ -112,18 +126,31 @@ def _detrai_fascia_bassa(loc: Locale, soglia_m: float = 0.60) -> float:
 
 
 def _derata_aggetto(loc: Locale, superficie_utile_m2: float, soglia_aggetto_m: float,
-                    coeff_ombra: float) -> tuple[float, str]:
-    """Porzione superiore in ombra d'aggetto: alta p = L/2, accreditata a `coeff_ombra`."""
+                    coeff_ombra: float) -> tuple[Optional[float], str]:
+    """Porzione in ombra d'aggetto, accreditata a `coeff_ombra`.
+
+    v3 (correzione M-1): la banda "p" (alta L/2) e' ancorata all'INTRADOSSO dell'aggetto e scende
+    verso il basso — cosi' lo schema di pag. 69 del RE Milano, che partiziona la finestra in
+    a (dentro p) / b (libera) / c (fascia 60 cm). La v1/v2 la ancorava alla testa della finestra:
+    un ancoraggio scelto in silenzio fra letture che ribaltano il verdetto (blind test M-1, 3/3).
+    Senza la quota dell'intradosso il risultato e' None = NON DETERMINABILE."""
     if loc.aggetto_sovrastante_m <= soglia_aggetto_m:
         return superficie_utile_m2, ""
+    if loc.quota_intradosso_aggetto_m is None:
+        return None, ("aggetto oltre soglia ma quota intradosso ignota: la banda p si ancora "
+                      "all'intradosso (schema RE Milano pag. 69) -> non determinabile")
     p = loc.aggetto_sovrastante_m / 2.0
+    banda_hi = loc.quota_intradosso_aggetto_m
+    banda_lo = banda_hi - p
     base_utile = max(loc.quota_davanzale_m, 0.60)
-    altezza_utile = max(0.0, loc.quota_architrave_m - base_utile)
-    h_in_ombra = min(p, altezza_utile)
-    a = h_in_ombra * loc.larghezza_finestra_m          # porzione in ombra
+    # a = finestra utile ∩ banda p (sovrapposizione di intervalli verticali)
+    lo = max(banda_lo, base_utile)
+    hi = min(banda_hi, loc.quota_architrave_m)
+    a = max(0.0, hi - lo) * loc.larghezza_finestra_m   # porzione in ombra
     b = superficie_utile_m2 - a                        # porzione libera
-    return b + coeff_ombra * a, (f"aggetto {loc.aggetto_sovrastante_m:.2f} m: p = L/2 = {p:.2f} m, "
-                                 f"{a:.2f} m2 accreditati a {coeff_ombra:.2f}")
+    return b + coeff_ombra * a, (f"aggetto {loc.aggetto_sovrastante_m:.2f} m: p = L/2 = {p:.2f} m "
+                                 f"dall'intradosso {banda_hi:.2f} m, {a:.2f} m2 accreditati a "
+                                 f"{coeff_ombra:.2f}")
 
 
 def motore_oggi(loc: Locale) -> Esito:
@@ -164,6 +191,9 @@ def milano(loc: Locale) -> Esito:
     utile = _detrai_fascia_bassa(loc)
     coeff = 0.5 if loc.parete_a_sud else (1.0 / 3.0)
     utile, nota_aggetto = _derata_aggetto(loc, utile, soglia_aggetto_m=1.50, coeff_ombra=coeff)
+    if utile is None:
+        return Esito("Milano RE art. 105", None, None, None,
+                     "luce architettonica meno fascia < 60 cm", nota_aggetto)
     divisore = 8.0 if rapporto_prof > 2.5 else 10.0
     richiesta = loc.superficie_pavimento_m2 / divisore
     note = f"rapporto 1/{int(divisore)} (profondita' {rapporto_prof:.2f}x l'architrave)"
@@ -177,6 +207,11 @@ def codogno(loc: Locale) -> Esito:
     """RLI Codogno art. 3.4.10: stessa detrazione, aggetto oltre 120 cm, coefficiente 1/3."""
     utile = _detrai_fascia_bassa(loc)
     utile, nota_aggetto = _derata_aggetto(loc, utile, soglia_aggetto_m=1.20, coeff_ombra=1.0 / 3.0)
+    if utile is None:
+        # Stessa costruzione "b + 1/3 a": l'ancoraggio della banda viene dalla figura del
+        # rispettivo strumento, che per Codogno NON abbiamo verificato -> stessa prudenza.
+        return Esito("RLI Codogno art. 3.4.10", None, None, None,
+                     "apertura finestrata meno fascia < 60 cm", nota_aggetto)
     richiesta = loc.superficie_pavimento_m2 / 8.0
     return Esito("RLI Codogno art. 3.4.10", utile, richiesta, utile >= richiesta,
                  "apertura finestrata meno fascia < 60 cm", nota_aggetto)
@@ -192,7 +227,7 @@ REGIMI = (motore_oggi, dm1975_come_scritto, milano, codogno)
 
 def _fmt(e: Esito) -> str:
     if e.conforme is None:
-        esito = "NON SANABILE"
+        esito = "NON DETERMINABILE" if "non determinabile" in e.note else "NON SANABILE"
     else:
         esito = "conforme" if e.conforme else "VIOLAZIONE"
     acc = f"{e.superficie_accreditata_m2:.2f}" if e.superficie_accreditata_m2 is not None else "  -"
@@ -217,21 +252,29 @@ def confronta(loc: Locale) -> tuple[bool, str]:
             print(f"      ({e.note})")
 
     v_motore = REGIME_MOTORE(loc).conforme
-    v_locali = [r(loc).conforme for r in REGIMI_LOCALI]
-    divergente = any(v != v_motore for v in v_locali)
-    permissivo = v_motore is True and any(v is not True for v in v_locali)
-    restrittivo = v_motore is False and any(v is True for v in v_locali)
+    esiti_locali = [r(loc) for r in REGIMI_LOCALI]
+    # Un NON DETERMINABILE non e' un verdetto: non boccia e non promuove, quindi non entra
+    # nel conteggio delle divergenze ne' nella direzione dell'errore (niente laundering).
+    determinati = [e for e in esiti_locali
+                   if not (e.conforme is None and "non determinabile" in e.note)]
+    indeterminati = len(esiti_locali) - len(determinati)
+    divergente = any(e.conforme != v_motore for e in determinati)
+    permissivo = v_motore is True and any(e.conforme is not True for e in determinati)
+    restrittivo = v_motore is False and any(e.conforme is True for e in determinati)
     direzione = ("entrambe" if permissivo and restrittivo else
                  "motore promuove / locale boccia" if permissivo else
                  "motore boccia / locale promuove" if restrittivo else "")
     if divergente:
         print(f"  >>> DIVERGENZA sul verdetto: {direzione or 'stesso esito, motivazione diversa'}")
+    if indeterminati:
+        print(f"  >>> {indeterminati} regime/i locale/i NON DETERMINABILE/I: senza la quota "
+              f"dell'intradosso il confronto non si puo' nemmeno fare")
     return divergente, direzione
 
 
 def main() -> int:
     print("=" * 82)
-    print("DIFFERENZIALE v2: la stessa stanza, il motore e due regolamenti comunali")
+    print("DIFFERENZIALE v3: la stessa stanza, il motore e due regolamenti comunali")
     print("(dimostrazione, non codice di produzione - vedi la CORREZIONE nel docstring)")
     print("=" * 82)
 
@@ -246,11 +289,17 @@ def main() -> int:
         Locale("CASO 3 - camera sotto un balcone, parete a NORD",
                superficie_pavimento_m2=24.0, profondita_m=5.0,
                larghezza_finestra_m=1.60, altezza_finestra_m=2.10, quota_davanzale_m=0.80,
-               superficie_apribile_m2=2.20, aggetto_sovrastante_m=2.00, parete_a_sud=False),
+               superficie_apribile_m2=2.20, aggetto_sovrastante_m=2.00, parete_a_sud=False,
+               quota_intradosso_aggetto_m=2.90),   # intradosso alla testa della finestra
         Locale("CASO 3-bis - LA STESSA CAMERA sulla facciata opposta (a sud)",
                superficie_pavimento_m2=24.0, profondita_m=5.0,
                larghezza_finestra_m=1.60, altezza_finestra_m=2.10, quota_davanzale_m=0.80,
-               superficie_apribile_m2=2.20, aggetto_sovrastante_m=2.00, parete_a_sud=True),
+               superficie_apribile_m2=2.20, aggetto_sovrastante_m=2.00, parete_a_sud=True,
+               quota_intradosso_aggetto_m=2.90),
+        Locale("CASO 3-ter - LA STESSA CAMERA, ma con la quota dell'aggetto IGNOTA",
+               superficie_pavimento_m2=24.0, profondita_m=5.0,
+               larghezza_finestra_m=1.60, altezza_finestra_m=2.10, quota_davanzale_m=0.80,
+               superficie_apribile_m2=2.20, aggetto_sovrastante_m=2.00, parete_a_sud=False),
         Locale("CASO 4 - stanza profonda: Milano non la ammette a nessuna dimensione",
                superficie_pavimento_m2=36.0, profondita_m=12.0,
                larghezza_finestra_m=2.00, altezza_finestra_m=2.20, quota_davanzale_m=0.90),
