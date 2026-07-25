@@ -1,16 +1,33 @@
 #!/usr/bin/env python3
-"""Differenziale eseguibile: la stessa stanza, tre regole, tre verdetti (studio 25/07/2026).
+"""Differenziale eseguibile: la stessa stanza, il motore e le regole locali (studio 25/07/2026).
+
+    CORREZIONE 25/07/2026 (v2). La v1 di questo script conteneva un errore di metodo che ne
+    invalidava la conclusione principale, ed e' stato trovato da una revisione avversariale della
+    proposta ADR-021 che si basava su di esso. Documentato qui invece che riscritto in silenzio.
+
+    ERRORE 1 - il regime "nazionale" non era il motore. La v1 dava al DM 1975 il numeratore
+    `superficie_apribile_m2` (anta netta). Il motore non calcola MAI un'anta netta: il numeratore
+    aeroilluminante e' `cons = min(OverallHeight x OverallWidth, Qto_WindowBaseQuantities.Area)`
+    (sandbox/checker.py:347-355 e :704), cioe' il VANO LORDO. Il differenziale confrontava
+    quindi le regole comunali con codice che non esiste.
+
+    ERRORE 2 - due finestre fisicamente impossibili. CASO 4 dichiarava un'anta di 5,00 m2 dentro
+    una luce di 2,00 x 2,20 = 4,40 m2 (113,6% del foro); CASO 2 dichiarava un'anta pari al 100,0%
+    della propria luce (telai a spessore zero). Erano esattamente i due casi che producevano la
+    direzione "il nazionale promuove, la Lombardia boccia".
+
+    CONSEGUENZA. Rieseguito con il numeratore vero, l'errore NON e' bidirezionale: il motore
+    sbaglia sempre nella stessa direzione, promuovendo cio' che il regolamento comunale boccia.
+    La frase della v1 "falsi fail E falsi pass, quindi non e' una scelta conservativa" era
+    l'argomento su cui ADR-021 fondava il salto da "limitazione" a "difetto". Quell'argomento
+    e' morto. Cio' che resta e' un difetto diverso e piu' semplice: il motore adotta una
+    convenzione di misura LORDA che nessuna fonte nazionale gli fornisce, e non la dichiara.
 
 PERCHE' ESISTE
     Le interviste sostenevano che il vincolo vero e' la regola LOCALE, non il calcolo nazionale.
     Lo studio su documenti pubblici (research/DIVERGENCE_STUDY_LOCAL.md) lo ha confermato su
     testo normativo primario. Questo script converte quella conclusione in aritmetica eseguibile:
-    dato UN disegno, calcola la superficie accreditata e il verdetto sotto tre regimi.
-
-    Il risultato che conta non e' "il motore sbaglia", ma: l'errore e' BIDIREZIONALE. Esiste una
-    stanza che il nazionale boccia e Milano promuove, e una che il nazionale promuove e la
-    Lombardia boccia. Un motore che applica in silenzio il DM 1975 fuori dal suo dominio non e'
-    conservativo: e' semplicemente non informato su dove si trova l'edificio.
+    dato UN disegno, calcola la superficie accreditata e il verdetto sotto ciascun regime.
 
 COSA NON E'
     * NON e' codice di produzione: nessun import del motore, nessun effetto sul gate.
@@ -39,6 +56,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+# Frazione anta-netta / luce architettonica usata quando il caso non la dichiara.
+# E' un'ASSUNZIONE di lavoro (telaio+controtelaio di un serramento ordinario), NON una fonte.
+# Serve solo alla gamba "DM come e' scritto", che il motore comunque non implementa.
+_FRAZIONE_ANTA_SU_LUCE = 0.70
+
 
 @dataclass
 class Locale:
@@ -49,9 +71,20 @@ class Locale:
     larghezza_finestra_m: float
     altezza_finestra_m: float         # luce architettonica (vuoto di progetto)
     quota_davanzale_m: float          # dal pavimento al bordo inferiore del vuoto
-    superficie_apribile_m2: float     # anta netta apribile (al netto dei telai)
+    superficie_apribile_m2: Optional[float] = None   # anta netta; None = derivata dalla luce
     aggetto_sovrastante_m: float = 0.0   # balcone/veletta sopra la finestra (0 = nessuno)
     parete_a_sud: bool = False           # entro +/-60 gradi da sud
+
+    def __post_init__(self) -> None:
+        if self.superficie_apribile_m2 is None:
+            self.superficie_apribile_m2 = self.luce_architettonica_m2 * _FRAZIONE_ANTA_SU_LUCE
+        # GUARDIA FISICA (errore 2 della v1): un'anta non puo' essere >= del foro che la contiene.
+        # Senza questa assert la v1 dichiarava un'anta al 113,6% della propria luce, e proprio
+        # quel caso impossibile generava meta' della "bidirezionalita'".
+        if self.superficie_apribile_m2 >= self.luce_architettonica_m2:
+            raise ValueError(
+                f"{self.nome}: anta {self.superficie_apribile_m2:.2f} m2 >= luce architettonica "
+                f"{self.luce_architettonica_m2:.2f} m2 - finestra fisicamente impossibile")
 
     @property
     def luce_architettonica_m2(self) -> float:
@@ -93,12 +126,30 @@ def _derata_aggetto(loc: Locale, superficie_utile_m2: float, soglia_aggetto_m: f
                                  f"{a:.2f} m2 accreditati a {coeff_ombra:.2f}")
 
 
-def dm1975(loc: Locale) -> Esito:
-    """Nazionale: apribile >= 1/8. La norma non definisce la superficie: si usa l'apribile."""
+def motore_oggi(loc: Locale) -> Esito:
+    """IL REGIME CHE CONTA: il DM 1975 come lo applica DAVVERO sandbox/checker.py.
+
+    Numeratore = vano LORDO, min(OverallHeight x OverallWidth, Qto Area) (checker.py:347-355, :704);
+    nessuna detrazione dei telai, nessuna detrazione della fascia sotto i 60 cm. Qui si modella
+    il caso in cui il Qto e' assente o non piu' stretto del bounding box, cioe' la luce.
+    Il DM art. 5 dice "apribile" e non definisce la misura: questa convenzione lorda e' una
+    scelta del motore, senza fonte nazionale a sostegno."""
     richiesta = loc.superficie_pavimento_m2 / 8.0
-    return Esito("DM 1975 art. 5 (nazionale)", loc.superficie_apribile_m2, richiesta,
+    acc = loc.luce_architettonica_m2
+    return Esito("MOTORE OGGI (DM 1975, vano lordo)", acc, richiesta, acc >= richiesta,
+                 "OverallHeight x OverallWidth (vano lordo, telai inclusi)")
+
+
+def dm1975_come_scritto(loc: Locale) -> Esito:
+    """Il DM letto alla lettera ("finestrata APRIBILE"), che il motore NON implementa.
+
+    Tenuto solo per mostrare quanto pesa la convenzione di misura a parita' di norma:
+    il divario fra questa riga e quella sopra e' interamente una scelta del motore."""
+    richiesta = loc.superficie_pavimento_m2 / 8.0
+    return Esito("DM 1975 letterale (anta netta)", loc.superficie_apribile_m2, richiesta,
                  loc.superficie_apribile_m2 >= richiesta,
-                 "superficie finestrata APRIBILE (anta netta)")
+                 "superficie finestrata APRIBILE (anta netta)",
+                 "NON e' cio' che il motore calcola")
 
 
 def milano(loc: Locale) -> Esito:
@@ -131,7 +182,12 @@ def codogno(loc: Locale) -> Esito:
                  "apertura finestrata meno fascia < 60 cm", nota_aggetto)
 
 
-REGIMI = (dm1975, milano, codogno)
+# Il confronto che decide e' MOTORE OGGI contro i due regimi locali. La gamba letterale del DM
+# e' informativa e resta fuori dal conteggio delle divergenze: confrontare il motore con una
+# lettura della norma che il motore non implementa era proprio l'errore 1 della v1.
+REGIME_MOTORE = motore_oggi
+REGIMI_LOCALI = (milano, codogno)
+REGIMI = (motore_oggi, dm1975_come_scritto, milano, codogno)
 
 
 def _fmt(e: Esito) -> str:
@@ -141,40 +197,52 @@ def _fmt(e: Esito) -> str:
         esito = "conforme" if e.conforme else "VIOLAZIONE"
     acc = f"{e.superficie_accreditata_m2:.2f}" if e.superficie_accreditata_m2 is not None else "  -"
     req = f"{e.superficie_richiesta_m2:.2f}" if e.superficie_richiesta_m2 is not None else "  -"
-    return f"  {e.regime:<28} {acc:>6} m2 su {req:>6} m2 richiesti  ->  {esito}"
+    return f"  {e.regime:<34} {acc:>6} m2 su {req:>6} m2 richiesti  ->  {esito}"
 
 
-def confronta(loc: Locale) -> list[Esito]:
+def confronta(loc: Locale) -> tuple[bool, str]:
+    """Stampa il caso. Ritorna (divergente, direzione) dove direzione in
+    {'', 'motore promuove / locale boccia', 'motore boccia / locale promuove', 'entrambe'}."""
     esiti = [r(loc) for r in REGIMI]
     print(f"\n{loc.nome}")
     print(f"  pavimento {loc.superficie_pavimento_m2:.1f} m2, profondita' {loc.profondita_m:.1f} m; "
           f"finestra {loc.larghezza_finestra_m:.2f} x {loc.altezza_finestra_m:.2f} m "
-          f"(davanzale {loc.quota_davanzale_m:.2f} m), apribile {loc.superficie_apribile_m2:.2f} m2"
+          f"(luce {loc.luce_architettonica_m2:.2f} m2, davanzale {loc.quota_davanzale_m:.2f} m), "
+          f"anta {loc.superficie_apribile_m2:.2f} m2 "
+          f"({100.0 * loc.superficie_apribile_m2 / loc.luce_architettonica_m2:.0f}% della luce)"
           + (f", aggetto {loc.aggetto_sovrastante_m:.2f} m" if loc.aggetto_sovrastante_m else ""))
     for e in esiti:
         print(_fmt(e))
         if e.note:
             print(f"      ({e.note})")
-    verdetti = {e.conforme for e in esiti}
-    if len(verdetti) > 1:
-        print("  >>> I VERDETTI DIVERGONO sullo stesso disegno.")
-    return esiti
+
+    v_motore = REGIME_MOTORE(loc).conforme
+    v_locali = [r(loc).conforme for r in REGIMI_LOCALI]
+    divergente = any(v != v_motore for v in v_locali)
+    permissivo = v_motore is True and any(v is not True for v in v_locali)
+    restrittivo = v_motore is False and any(v is True for v in v_locali)
+    direzione = ("entrambe" if permissivo and restrittivo else
+                 "motore promuove / locale boccia" if permissivo else
+                 "motore boccia / locale promuove" if restrittivo else "")
+    if divergente:
+        print(f"  >>> DIVERGENZA sul verdetto: {direzione or 'stesso esito, motivazione diversa'}")
+    return divergente, direzione
 
 
 def main() -> int:
-    print("=" * 78)
-    print("DIFFERENZIALE: stessa stanza, tre regole (dimostrazione, non codice di produzione)")
-    print("=" * 78)
+    print("=" * 82)
+    print("DIFFERENZIALE v2: la stessa stanza, il motore e due regolamenti comunali")
+    print("(dimostrazione, non codice di produzione - vedi la CORREZIONE nel docstring)")
+    print("=" * 82)
 
     casi = [
-        Locale("CASO 1 - il nazionale BOCCIA, Milano PROMUOVE",
+        Locale("CASO 1 - stanza ordinaria, finestra sopra il minimo nazionale",
                superficie_pavimento_m2=20.0, profondita_m=4.0,
                larghezza_finestra_m=1.30, altezza_finestra_m=2.00, quota_davanzale_m=0.90,
                superficie_apribile_m2=1.70),
-        Locale("CASO 2 - il nazionale PROMUOVE, la Lombardia BOCCIA (portafinestra)",
+        Locale("CASO 2 - portafinestra: tutta la fascia bassa e' detratta in Lombardia",
                superficie_pavimento_m2=14.0, profondita_m=3.5,
-               larghezza_finestra_m=0.90, altezza_finestra_m=2.20, quota_davanzale_m=0.00,
-               superficie_apribile_m2=1.98),
+               larghezza_finestra_m=0.90, altezza_finestra_m=2.20, quota_davanzale_m=0.00),
         Locale("CASO 3 - camera sotto un balcone, parete a NORD",
                superficie_pavimento_m2=24.0, profondita_m=5.0,
                larghezza_finestra_m=1.60, altezza_finestra_m=2.10, quota_davanzale_m=0.80,
@@ -185,21 +253,37 @@ def main() -> int:
                superficie_apribile_m2=2.20, aggetto_sovrastante_m=2.00, parete_a_sud=True),
         Locale("CASO 4 - stanza profonda: Milano non la ammette a nessuna dimensione",
                superficie_pavimento_m2=36.0, profondita_m=12.0,
-               larghezza_finestra_m=2.00, altezza_finestra_m=2.20, quota_davanzale_m=0.90,
-               superficie_apribile_m2=5.00),
+               larghezza_finestra_m=2.00, altezza_finestra_m=2.20, quota_davanzale_m=0.90),
     ]
     divergenti = 0
+    direzioni: dict[str, int] = {}
     for loc in casi:
-        esiti = confronta(loc)
-        if len({e.conforme for e in esiti}) > 1:
-            divergenti += 1
+        div, direzione = confronta(loc)
+        divergenti += div
+        if direzione:
+            direzioni[direzione] = direzioni.get(direzione, 0) + 1
 
-    print("\n" + "=" * 78)
-    print(f"RISULTATO: {divergenti} casi su {len(casi)} in cui lo stesso disegno riceve verdetti "
-          f"diversi\n           a seconda della sola giurisdizione.")
-    print("\nCONSEGUENZA: l'errore e' bidirezionale (falsi fail E falsi pass), quindi applicare")
-    print("il DM 1975 fuori dal suo dominio non e' una scelta conservativa: e' una scelta non")
-    print("informata. La giurisdizione non e' un raffinamento, e' un ingresso mancante.")
+    print("\n" + "=" * 82)
+    print(f"RISULTATO: {divergenti} casi su {len(casi)} in cui il verdetto del MOTORE differisce")
+    print("           da almeno un regolamento comunale sullo stesso disegno.")
+    print("\nDIREZIONE DELL'ERRORE (e' la parte che la v1 aveva sbagliata):")
+    for d, n in sorted(direzioni.items()):
+        print(f"  {d:<34} {n} casi")
+    if not direzioni.get("motore boccia / locale promuove"):
+        print("\n  L'errore e' A SENSO UNICO: il motore promuove cio' che il comune boccia,")
+        print("  mai il contrario. Non e' quindi il caso 'ne' conservativo ne' informato' che")
+        print("  la v1 affermava: e' una PERMISSIVITA' SISTEMATICA, che si corregge nel")
+        print("  numeratore e nella sua dichiarazione, non aggiungendo un ingresso giurisdizione.")
+
+    print("\nCOSA MOSTRA DAVVERO QUESTO SCRIPT")
+    print("  1. La divergenza fra comuni e' reale e cambia i verdetti (Milano 150 cm contro")
+    print("     Codogno 120 cm sull'aggetto: due strumenti lombardi che divergono TRA LORO).")
+    print("  2. Il motore misura il vano LORDO. Il DM art. 5 dice 'apribile' e non definisce")
+    print("     la misura: quella convenzione e' una scelta del motore, non dichiarata e senza")
+    print("     fonte nazionale. Il divario fra le prime due righe di ogni caso e' quella scelta.")
+    print("  3. Quello che NON mostra: che serva un ingresso 'giurisdizione'. Vedi")
+    print("     research/ADR-021_PROPOSAL.md, respinta in quella forma il 25/07/2026.")
+
     print("\nAVVERTENZA: queste codifiche sono una lettura dei testi citati in")
     print("research/DIVERGENCE_STUDY_LOCAL.md, non verificate da un tecnico ne' da un ufficio")
     print("comunale. Dimostrano che la divergenza esiste; non decidono nessuna pratica.")
