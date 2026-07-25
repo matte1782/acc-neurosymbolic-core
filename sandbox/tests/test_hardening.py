@@ -14,6 +14,7 @@ Run either way:
 """
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -264,6 +265,39 @@ def test_shacl_fail_closed() -> None:
            C._shacl_verdict("habitable", False, 2.8, None, False, thr)[1] is None)
 
 
+# ------------------------------------------- truth-in-labelling: the declared conventions
+def test_measurement_conventions_declared() -> None:
+    """The engine must SAY which measurement convention it chose (ADR-021 proposal §2).
+
+    DM 1975 art. 5 defines no convention, so the gross reading is an engine decision. These checks
+    pin (a) the block's presence and shape, (b) that it names the functions that actually implement
+    it — so moving the convention without moving the text fails here rather than misleading a
+    practitioner, and (c) that it is inert: declarative prose, never read back by a verdict."""
+    conv = C.MEASUREMENT_CONVENTIONS
+    _check("conv_keys_pinned",
+           set(conv) == {"aero_numeratore", "aero_denominatore", "altezza", "ambito"})
+    _check("conv_values_are_prose", all(isinstance(v, str) and len(v) > 40 for v in conv.values()))
+    # (b) the citations must name real callables, so the text cannot silently outlive the code.
+    for fn in ("_window_area_bounds", "_serving_window_data", "_aero_trust", "space_floor_area",
+               "space_height"):
+        _check(f"conv_cites_real_symbol_{fn}", callable(getattr(C, fn, None)))
+    _check("conv_cites_numerator_impl", "_window_area_bounds" in conv["aero_numeratore"])
+    _check("conv_cites_denominator_impl", "space_floor_area" in conv["aero_denominatore"])
+    _check("conv_cites_height_impl", "space_height" in conv["altezza"])
+    # (c) the two facts a reader most needs, stated in the engine's own words.
+    _check("conv_says_gross", "LORDO" in conv["aero_numeratore"])
+    _check("conv_says_no_national_source", "non ha una fonte nazionale" in conv["aero_numeratore"])
+    _check("conv_says_height_not_a_mean", "NON e' " in conv["altezza"]
+           and "media ponderata" in conv["altezza"])
+    _check("conv_says_scope_is_national", "non lo deduce dal modello" in conv["ambito"])
+    # INERTNESS: no verdict path may consume this block. If a future edit routes a decision through
+    # it, the frozen controls could move behind a 'documentation' change — forbid it here.
+    src = inspect.getsource(C)
+    reads = [ln for ln in src.splitlines() if "MEASUREMENT_CONVENTIONS" in ln]
+    _check("conv_is_inert",
+           len(reads) == 2 and any("MEASUREMENT_CONVENTIONS = {" in ln for ln in reads))
+
+
 def main() -> int:
     test_window_area_positivity()
     test_quantity_positivity()
@@ -271,6 +305,7 @@ def main() -> int:
     test_zero_space_not_certifiable()
     test_c2_classified_exit()
     test_shacl_fail_closed()
+    test_measurement_conventions_declared()
     print(f"\n{_PASS}/{_PASS + _FAIL} passed, {_SKIP} skipped")
     return 1 if _FAIL else 0
 

@@ -839,6 +839,44 @@ MEASUREMENT_EXTRACTORS = {
 }
 
 
+# --- Truth-in-labelling: the measurement conventions this engine chose ---------------------------
+# WHY THIS EXISTS (research/ADR-021_PROPOSAL.md §2, 25/07/2026). DM 5/7/1975 art. 5 requires a
+# "superficie finestrata apribile" >= 1/8 of the floor area and NEVER DEFINES HOW IT IS MEASURED.
+# The engine therefore had to pick a convention, and it picked a GROSS one — and until now it
+# declared that choice nowhere: not in the report, not in the CLI verdict line, not in the API
+# envelope. A reader could not tell an engine decision from a statutory requirement.
+#
+# This block is DECLARATIVE ONLY. It changes no verdict, gates nothing, and is never parsed back:
+# every string here is prose for a human, so the frozen controls stay byte-identical by
+# construction. It exists so the choice can be argued with instead of inherited silently.
+#
+# Each entry cites the code that implements it, so a future edit that moves the convention and
+# forgets this text is a visible lie rather than an invisible one (tests/test_hardening.py pins
+# the keys and the citations).
+MEASUREMENT_CONVENTIONS = {
+    "aero_numeratore": (
+        "Vano finestrato LORDO: somma, sulle finestre servienti deduplicate, di "
+        "min(OverallHeight x OverallWidth, Qto_WindowBaseQuantities.Area). Nessuna detrazione dei "
+        "telai, nessuna detrazione della fascia sotto i 60 cm, nessuna derata per aggetti o "
+        "orientamento. Il DM 1975 art. 5 dice 'apribile' e non definisce la misura: questa "
+        "convenzione e' una SCELTA DEL MOTORE e non ha una fonte nazionale a sostegno. "
+        "[checker.py:_window_area_bounds, _serving_window_data, _aero_trust]"),
+    "aero_denominatore": (
+        "Qto NetFloorArea, con ripiego su GrossFloorArea se la prima e' assente. "
+        "[checker.py:space_floor_area]"),
+    "altezza": (
+        "Scalare singolo letto dal Qto (Height, poi ClearHeight/NetHeight/AltezzaNetta): NON e' "
+        "una media ponderata. Un locale a soffitto inclinato o un sottotetto non ricevono qui "
+        "l'altezza media che diversi regolamenti comunali richiedono. "
+        "[checker.py:space_height]"),
+    "ambito": (
+        "DM 5/7/1975 (+ Salva Casa se attivato), baseline nazionale. Il motore NON conosce il "
+        "comune dell'edificio e non lo deduce dal modello. Dove un regolamento edilizio comunale "
+        "o un RLI ridefinisce la misura o la soglia, questo verdetto non e' quello del comune: "
+        "vedi research/DIVERGENCE_STUDY_LOCAL.md."),
+}
+
+
 # --- Stage 5/5b: A-Box materialization (the feature-extractor side of the SHACL split) ---------
 # The RULES side (shapes loading + fail-closed guards + pyshacl + deterministic SPARQL report
 # parsing) lives in orchestrator.py (ADR-009). checker keeps exactly what belongs to the
@@ -1228,6 +1266,9 @@ def run(path: str, salva_casa: bool = False, thr: Optional["Thresholds"] = None,
         "length_unit_scale_to_m": scale,
         "salva_casa": salva_casa,
         "thresholds": thr.to_legacy_dict(),  # accessor view -> same 4-key block (byte-identical)
+        # What was MEASURED, next to the bars it was measured against. Declarative prose only —
+        # no verdict reads this, so the frozen controls cannot move (ADR-021 proposal §2).
+        "measurement_conventions": MEASUREMENT_CONVENTIONS,
         "spaces_evaluated": len(serialized),
         # Stage 4b room-in-store proof: count of IfcSpace nodes materialized into the per-run store
         # (GlobalId-set-exact with the model's IfcSpace set — asserted in test_graph).
@@ -1253,6 +1294,18 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     thr = Thresholds.from_rules_json(args.rules) if args.rules else Thresholds()
+    # NO SILENT NATIONAL DEFAULT (research/ADR-021_PROPOSAL.md §2). --rules stays OPTIONAL — making
+    # it required would break every caller for a flag with exactly one real value, which is
+    # ceremony, not honesty — but its absence is a CHOICE OF RULE PACK and must be audible.
+    # POST /evaluate already requires an explicit pack_id (api.py); this closes the CLI's side.
+    if not args.rules:
+        print("NOTA: nessun --rules indicato -> applicato il baseline nazionale DM 5/7/1975.")
+        print("      Il motore non conosce il comune dell'edificio e non lo deduce dal modello:")
+        print("      dove un regolamento comunale (RE/RLI) ridefinisce la misura o la soglia,")
+        print("      questo verdetto NON e' quello del comune.")
+    # The aeroilluminating convention is an engine choice with no national source: say so, always.
+    print(f"MISURA: aero = vano finestrato LORDO / NetFloorArea; altezza = scalare Qto singolo, "
+          f"non media ponderata. Dettaglio in report['measurement_conventions'].")
     try:
         report = run(args.ifc, args.salva_casa, thr)
     except NotCertifiableError as e:
