@@ -867,8 +867,12 @@ MEASUREMENT_CONVENTIONS = {
     "altezza": (
         "Scalare singolo letto dal Qto (Height, poi ClearHeight/NetHeight/AltezzaNetta): NON e' "
         "una media ponderata. Un locale a soffitto inclinato o un sottotetto non ricevono qui "
-        "l'altezza media che diversi regolamenti comunali richiedono. "
-        "[checker.py:space_height]"),
+        "l'altezza media ponderata che la definizione regionale lombarda prescrive: DTU n. 29 "
+        "'Altezza utile' (Allegato B alla DGR Lombardia 24/10/2018 n. XI/695, BURL 44 del "
+        "31/10/2018), senza incidenza urbanistica e percio' vigente a Milano dal 30/04/2019, "
+        "dice che 'nei locali aventi soffitti inclinati o curvi l'altezza utile si determina "
+        "calcolando l'altezza media ponderata'. Su un soffitto piano le due misure coincidono; "
+        "su un sottotetto no. [checker.py:space_height]"),
     "ambito": (
         "DM 5/7/1975 (+ Salva Casa se attivato), baseline nazionale. Il motore NON conosce il "
         "comune dell'edificio e non lo deduce dal modello. Dove un regolamento edilizio comunale "
