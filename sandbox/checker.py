@@ -873,11 +873,13 @@ MEASUREMENT_CONVENTIONS = {
         "dice che 'nei locali aventi soffitti inclinati o curvi l'altezza utile si determina "
         "calcolando l'altezza media ponderata'. Su un soffitto piano le due misure coincidono; "
         "su un sottotetto no. Per i sottotetti lombardi la formula e' esplicita e di rango "
-        "LEGISLATIVO (L.R. Lombardia art. 63, come riportata da TAR Milano 5213/2009): altezza "
-        "media ponderale >= 2,40 m 'calcolata dividendo il volume della parte di sottotetto la "
-        "cui altezza superi metri 1,50 per la superficie relativa'; la stessa sentenza precisa "
-        "che, essendo fonte legislativa, non e' derogabile neppure in condono. Il motore NON "
-        "calcola questa grandezza. [checker.py:space_height]"),
+        "LEGISLATIVO: L.R. Lombardia 11/3/2005 n. 12 art. 63 comma 6 (verificato sul testo "
+        "ufficiale del Consiglio regionale, non solo sulla citazione che ne fa TAR Milano "
+        "5213/2009) prescrive un'altezza media ponderale di 2,40 m, ridotta a 2,10 per i comuni "
+        "sopra i 600 m, 'calcolata dividendo il volume della parte di sottotetto la cui altezza "
+        "superi metri 1,50 per la superficie relativa'; TAR Milano 5213/2009 aggiunge che, "
+        "essendo fonte legislativa, non e' derogabile neppure in condono. Il motore NON calcola "
+        "questa grandezza. [checker.py:space_height]"),
     "ambito": (
         "DM 5/7/1975 (+ Salva Casa se attivato), baseline nazionale. Il motore NON conosce il "
         "comune dell'edificio e non lo deduce dal modello. Dove un regolamento edilizio comunale "
